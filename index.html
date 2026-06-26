@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Modern Wordle Clone - Customizable word game">
+    <title>Wordle Pro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loader-content">
+            <div class="loader-spinner"></div>
+            <p class="loader-text">Loading dictionary...</p>
+            <div class="loader-progress">
+                <div class="loader-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div id="app" class="app-container" style="display: none;">
+        <!-- Home Screen -->
+        <div id="home-screen" class="screen active">
+            <div class="home-content">
+                <div class="logo-container">
+                    <h1 class="logo-title">Wordle<span class="logo-accent">Pro</span></h1>
+                    <p class="logo-subtitle">Customize your word puzzle experience</p>
+                </div>
+
+                <div class="settings-card">
+                    <div class="setting-group">
+                        <label for="home-word-length" class="setting-label">
+                            <span class="label-text">Word Length</span>
+                            <span class="label-value" id="word-length-display">5</span>
+                        </label>
+                        <div class="button-group">
+                            <button class="option-btn" data-length="4">4</button>
+                            <button class="option-btn active" data-length="5">5</button>
+                            <button class="option-btn" data-length="6">6</button>
+                            <button class="option-btn" data-length="7">7</button>
+                            <button class="option-btn" data-length="8">8</button>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label for="home-tries" class="setting-label">
+                            <span class="label-text">Number of Tries</span>
+                            <span class="label-value" id="tries-display">6</span>
+                        </label>
+                        <input type="range" id="home-tries" class="range-slider" min="3" max="10" value="6">
+                        <div class="range-labels">
+                            <span>3</span>
+                            <span>10</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">
+                            <span class="label-text">Difficulty</span>
+                        </label>
+                        <div class="button-group">
+                            <button class="difficulty-btn active" data-difficulty="easy">
+                                <span class="diff-icon">😊</span>
+                                <span class="diff-text">Easy</span>
+                            </button>
+                            <button class="difficulty-btn" data-difficulty="medium">
+                                <span class="diff-icon">🤔</span>
+                                <span class="diff-text">Medium</span>
+                            </button>
+                            <button class="difficulty-btn" data-difficulty="hard">
+                                <span class="diff-icon">😤</span>
+                                <span class="diff-text">Hard</span>
+                            </button>
+                        </div>
+                        <p class="difficulty-desc" id="difficulty-description">Any valid word is allowed</p>
+                    </div>
+
+                    <button id="start-game-btn" class="start-btn">
+                        <span>Start Game</span>
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="stats-preview" id="stats-preview">
+                    <h3>Your Stats</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item-preview">
+                            <div class="stat-value-preview">0</div>
+                            <div class="stat-label-preview">Played</div>
+                        </div>
+                        <div class="stat-item-preview">
+                            <div class="stat-value-preview">0</div>
+                            <div class="stat-label-preview">Won</div>
+                        </div>
+                        <div class="stat-item-preview">
+                            <div class="stat-value-preview">0</div>
+                            <div class="stat-label-preview">Streak</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <header class="game-header">
+                <button class="header-btn" id="back-btn" aria-label="Back to home">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <div class="game-info">
+                    <h2 class="game-title">Wordle<span class="game-accent">Pro</span></h2>
+                    <div class="game-meta">
+                        <span id="game-config"></span>
+                    </div>
+                </div>
+                <button class="header-btn" id="theme-toggle" aria-label="Toggle theme">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3C7.03 3 3 7.03 3 12C3 16.97 7.03 21 12 21C13.28 21 14.5 20.72 15.61 20.21C14.5 18.95 13.84 17.27 13.84 15.42C13.84 11.41 17.09 8.16 21.1 8.16C21.53 8.16 21.95 8.2 22.36 8.27C21.2 5.18 17.91 3 12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </header>
+
+            <main class="game-main">
+                <div id="message-container" class="message-container"></div>
+
+                <div id="game-board" class="game-board"></div>
+
+                <!-- Result Display -->
+                <div id="result-display" class="result-display" style="display: none;">
+                    <div class="result-content">
+                        <div class="result-icon" id="result-icon"></div>
+                        <h3 class="result-title" id="result-title"></h3>
+                        <div class="result-word">
+                            <span class="result-label">The word was:</span>
+                            <span class="result-answer" id="result-answer"></span>
+                        </div>
+                        <div class="result-stats" id="result-stats"></div>
+                        <div class="result-actions">
+                            <button class="result-btn secondary" id="view-analysis-btn">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                    <rect x="3" y="8" width="3" height="9" fill="currentColor" rx="1"/>
+                                    <rect x="8.5" y="4" width="3" height="13" fill="currentColor" rx="1"/>
+                                    <rect x="14" y="11" width="3" height="6" fill="currentColor" rx="1"/>
+                                </svg>
+                                View Analysis
+                            </button>
+                            <button class="result-btn primary" id="play-again-btn">
+                                Play Again
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="keyboard" class="keyboard"></div>
+            </main>
+        </div>
+
+        <!-- Analysis Modal -->
+        <div id="analysis-modal" class="modal">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Performance Analysis</h2>
+                    <button class="modal-close" aria-label="Close">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body" id="analysis-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="words.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
