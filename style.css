@@ -160,6 +160,13 @@ body {
 }
 
 /* Home Screen */
+.home-theme-toggle {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+}
+
 .home-content {
     max-width: 500px;
     margin: 0 auto;

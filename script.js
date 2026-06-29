@@ -707,13 +707,15 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatsPreview();
     });
 
-    // Theme toggle
-    document.getElementById('theme-toggle').addEventListener('click', () => {
+    // Theme toggle (game header + home screen share one handler)
+    function toggleTheme() {
         const theme = document.documentElement.getAttribute('data-theme');
         const newTheme = theme === 'light' ? 'dark' : 'light';
         document.documentElement.setAttribute('data-theme', newTheme);
         localStorage.setItem('theme', newTheme);
-    });
+    }
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('home-theme-toggle').addEventListener('click', toggleTheme);
 
     // Play again button
     document.getElementById('play-again-btn').addEventListener('click', () => {
