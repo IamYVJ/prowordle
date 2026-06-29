@@ -26,7 +26,7 @@ let stats = JSON.parse(localStorage.getItem('wordleProStats')) || {
 };
 
 // Theme Management
-const currentTheme = localStorage.getItem('theme') || 'light';
+const currentTheme = localStorage.getItem('theme') || 'dark';
 document.documentElement.setAttribute('data-theme', currentTheme);
 
 // Debug mode (OFF by default). Enable to log the solution + internals to the console:
@@ -366,6 +366,7 @@ function initBoard() {
     board.innerHTML = '';
     board.style.gridTemplateColumns = `repeat(${state.wordLength}, 1fr)`;
     board.style.gridTemplateRows = `repeat(${state.maxTries}, 1fr)`;
+    board.style.setProperty('--cols', state.wordLength);
 
     for (let i = 0; i < state.maxTries * state.wordLength; i++) {
         const tile = document.createElement('div');
