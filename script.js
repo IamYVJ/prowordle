@@ -627,73 +627,118 @@ function updateStats(won) {
 }
 
 // Analysis
+// Post-game breakdown. Two things make this accurate rather than cosmetic:
+//   1. Tiles are colored with the SAME feedback logic as the live board
+//      (computePattern), so greens/yellows/greys always match what was shown.
+//   2. Each guess is scored with real solver insight: how many answers were still
+//      possible before vs after the clue, and how much information that revealed
+//      (bits = log2(before/after)). The candidate pool is the same frequency-ordered
+//      answers list the game draws solutions from.
 function displayAnalysis() {
     if (!state.gameOver || state.guesses.length === 0) return;
 
     const content = document.getElementById('analysis-content');
     content.innerHTML = '';
 
-    state.guesses.forEach((guess, index) => {
-        const analysis = analyzeGuess(guess, index);
+    const answers = (wordCache[state.wordLength] && wordCache[state.wordLength].answers) || [];
+    const startCount = answers.length;
+
+    // Walk the guesses, shrinking the candidate pool one feedback pattern at a time.
+    // `candidates` always already satisfies every earlier clue, so each step only has
+    // to apply the current guess's pattern.
+    let candidates = answers.slice();
+    const steps = state.guesses.map((guess) => {
+        const pattern = computePattern(guess, state.solution);
+        const before = candidates.length;
+        candidates = candidates.filter(c => computePattern(guess, c) === pattern);
+        return { guess, pattern, before, after: candidates.length };
+    });
+
+    // Summary header.
+    const summary = document.createElement('div');
+    summary.className = 'analysis-summary';
+    const resultLabel = state.won
+        ? `Solved in ${state.guesses.length} / ${state.maxTries}`
+        : `Out of tries`;
+    const subText = startCount
+        ? `${startCount.toLocaleString()} possible ${state.wordLength}-letter words at the start`
+        : `Word list unavailable — showing letter feedback only`;
+    summary.innerHTML = `
+        <span class="analysis-summary-icon">${state.won ? '🏆' : '💡'}</span>
+        <div>
+            <div class="analysis-summary-title">${resultLabel}</div>
+            <div class="analysis-summary-sub">${subText}</div>
+        </div>`;
+    content.appendChild(summary);
+
+    // Per-guess cards.
+    steps.forEach((step, index) => {
+        const { guess, pattern, before, after } = step;
+        const hasPool = startCount > 0 && before > 0;
+        const bits = (hasPool && after > 0) ? Math.log2(before / after) : 0;
+
         const stepDiv = document.createElement('div');
         stepDiv.className = 'analysis-step';
 
-        let html = `<h4>Guess ${index + 1}</h4>`;
-        html += '<div class="analysis-guess">';
+        let html = `<div class="analysis-head">
+            <h4>Guess ${index + 1}</h4>
+            ${hasPool ? `<span class="analysis-badge">+${bits.toFixed(1)} bits</span>` : ''}
+        </div>`;
 
+        html += '<div class="analysis-guess">';
         for (let i = 0; i < guess.length; i++) {
-            const letter = guess[i].toUpperCase();
-            let className = 'analysis-tile';
-            let bgColor = 'var(--absent)';
-            if (guess[i] === state.solution[i]) {
-                bgColor = 'var(--correct)';
-            } else if (state.solution.includes(guess[i])) {
-                bgColor = 'var(--present)';
-            }
-            html += `<div class="${className}" style="background-color: ${bgColor};">${letter}</div>`;
+            const cls = pattern[i] === '2' ? 'correct' : pattern[i] === '1' ? 'present' : 'absent';
+            html += `<div class="analysis-tile ${cls}">${guess[i].toUpperCase()}</div>`;
+        }
+        html += '</div>';
+
+        if (hasPool) {
+            html += `<div class="analysis-stats-row">
+                <div class="analysis-stat">
+                    <span class="analysis-stat-value">${before.toLocaleString()} &rarr; ${after.toLocaleString()}</span>
+                    <span class="analysis-stat-label">possible answers</span>
+                </div>
+            </div>`;
         }
 
-        html += '</div>';
-        html += `<div class="suggestion-text">${analysis}</div>`;
+        html += `<div class="suggestion-text">${analyzeGuess(step, hasPool)}</div>`;
         stepDiv.innerHTML = html;
         content.appendChild(stepDiv);
     });
 }
 
-// Simple Analysis Algorithm
-function analyzeGuess(guess, guessNumber) {
-    if (guess === state.solution) {
-        return '✓ Correct! Perfect guess.';
+// Turns one guess's outcome into a short, honest takeaway. Uses the candidate
+// narrowing when the word pool is available, and always falls back to the raw
+// green/yellow feedback so it works even if the list failed to load.
+function analyzeGuess(step, hasPool) {
+    const { guess, pattern, before, after } = step;
+    if (guess === state.solution) return '✓ Nailed it — this was the answer.';
+
+    const greens = (pattern.match(/2/g) || []).length;
+    const yellows = (pattern.match(/1/g) || []).length;
+
+    const hints = [];
+    if (greens) hints.push(`${greens} in the right spot`);
+    if (yellows) hints.push(`${yellows} in the word but misplaced`);
+    const hintText = hints.length ? ` (${hints.join(', ')})` : '';
+
+    if (!hasPool) {
+        if (greens || yellows) return `${greens} green, ${yellows} yellow.`;
+        return `No letters matched — try a fresh set of letters.`;
     }
 
-    let correctPositions = 0;
-    let correctLetters = 0;
+    const reduction = before > 0 ? 1 - after / before : 0;
+    const pct = Math.round(reduction * 100);
 
-    for (let i = 0; i < guess.length; i++) {
-        if (guess[i] === state.solution[i]) {
-            correctPositions++;
-        } else if (state.solution.includes(guess[i])) {
-            correctLetters++;
-        }
-    }
+    let quality;
+    if (after <= 1) quality = 'That left just one possibility — the answer was locked in.';
+    else if (reduction >= 0.9) quality = `Excellent — ruled out ${pct}% of the remaining words.`;
+    else if (reduction >= 0.6) quality = `Strong — cut the field by ${pct}%.`;
+    else if (reduction >= 0.3) quality = `Decent — ${pct}% fewer options to weigh.`;
+    else if (reduction > 0) quality = `Modest — only ${pct}% narrower.`;
+    else quality = `No new information — the field didn't shrink.`;
 
-    if (guessNumber === 0) {
-        if (correctPositions > 0) {
-            return `Good start! ${correctPositions} correct position(s). ${correctLetters > 0 ? `${correctLetters} letter(s) in wrong position.` : ''}`;
-        } else if (correctLetters > 0) {
-            return `${correctLetters} correct letter(s) but wrong positions. Try rearranging.`;
-        } else {
-            return `No matches. Try words with common vowels like E, A, O.`;
-        }
-    } else {
-        if (correctPositions >= guess.length - 1) {
-            return `Very close! ${correctPositions} correct positions. Focus on the remaining letter(s).`;
-        } else if (correctPositions > 0 || correctLetters > 0) {
-            return `Progress: ${correctPositions} correct position(s), ${correctLetters} wrong position(s). Use the revealed hints.`;
-        } else {
-            return `Try completely different letters. Avoid: ${guess.toUpperCase()}`;
-        }
-    }
+    return `${quality}${hintText}`;
 }
 
 // Event Listeners
