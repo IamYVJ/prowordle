@@ -11,33 +11,11 @@
 //   strategy 'info-gain'   -> score = expected information gain in bits (higher = better)
 //   strategy 'most-likely' -> score = normalized commonness rank (1 = most common)
 
-// Reusable scratch buffers (worker is single-threaded, so reuse is safe and avoids
-// allocating on every one of the millions of pattern computations).
-const _counts = new Int8Array(26);
-const _code = new Int8Array(16);
-
-// Wordle feedback pattern of `guess` against `target`, as a digit string:
-// 2 = correct (green), 1 = present (yellow), 0 = absent (grey). Mirrors the
-// game's two-pass, letter-count-aware evaluation in script.js (revealRow).
-function computePattern(guess, target) {
-    const L = guess.length;
-    _counts.fill(0);
-    for (let i = 0; i < L; i++) _counts[target.charCodeAt(i) - 97]++;
-    for (let i = 0; i < L; i++) {
-        const g = guess.charCodeAt(i);
-        if (g === target.charCodeAt(i)) { _code[i] = 2; _counts[g - 97]--; }
-        else _code[i] = 0;
-    }
-    for (let i = 0; i < L; i++) {
-        if (_code[i] === 0) {
-            const ci = guess.charCodeAt(i) - 97;
-            if (_counts[ci] > 0) { _code[i] = 1; _counts[ci]--; }
-        }
-    }
-    let res = '';
-    for (let i = 0; i < L; i++) res += _code[i];
-    return res;
-}
+// Feedback scoring is the canonical computePattern from pattern.js — the SAME function the
+// board (revealRow) and the post-game analysis use, so the solver can never drift from what
+// the player actually sees. importScripts runs synchronously, before any code below.
+importScripts('pattern.js');
+const computePattern = self.WordlePattern.computePattern;
 
 // Evenly-spaced subsample of at most `cap` items (deterministic, no RNG). Used to bound
 // the entropy search when the candidate/probe pool is very large (e.g. Hard mode's

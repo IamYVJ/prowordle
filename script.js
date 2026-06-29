@@ -92,20 +92,9 @@ const SUGGEST_TOP_N = 10;       // how many suggestions to list
 const SUGGEST_SMALL_SET = 2;    // <= this many candidates left -> go for the win
 
 // Wordle feedback pattern of `guess` vs `target` as a "210"-style code string
-// (2=correct, 1=present, 0=absent). Must match revealRow()'s two-pass logic.
-function computePattern(guess, target) {
-    const L = guess.length;
-    const code = new Array(L).fill(0);
-    const counts = {};
-    for (const ch of target) counts[ch] = (counts[ch] || 0) + 1;
-    for (let i = 0; i < L; i++) {
-        if (guess[i] === target[i]) { code[i] = 2; counts[guess[i]]--; }
-    }
-    for (let i = 0; i < L; i++) {
-        if (code[i] === 0 && counts[guess[i]] > 0) { code[i] = 1; counts[guess[i]]--; }
-    }
-    return code.join('');
-}
+// (2=correct, 1=present, 0=absent). Shared with revealRow(), the analysis, and the solver
+// worker via pattern.js (loaded just before this script) so they can never drift apart.
+const computePattern = WordlePattern.computePattern;
 
 // Bridge to the Web Worker. Sends only the feedback already shown to the player
 // (the worker never receives state.solution), so suggestions can't just leak the answer.
@@ -491,41 +480,26 @@ function revealRow() {
     const tiles = document.querySelectorAll('.tile');
     const startIndex = state.currentRow * state.wordLength;
     const guess = state.currentGuess;
-    const solution = state.solution;
 
-    // Count letter frequency in solution
-    const solutionLetters = {};
-    for (let letter of solution) {
-        solutionLetters[letter] = (solutionLetters[letter] || 0) + 1;
+    // Score via the shared canonical function so the board matches the solver/analysis exactly.
+    const pattern = computePattern(guess, state.solution); // e.g. "21000" (2=correct,1=present,0=absent)
+    const CLASS = { '2': 'correct', '1': 'present', '0': 'absent' };
+
+    // Record revealed hints (used by Hard-mode validation + the post-game analysis).
+    for (let i = 0; i < pattern.length; i++) {
+        if (pattern[i] === '2') state.revealedLetters.correct[i] = guess[i];
+        else if (pattern[i] === '1') state.revealedLetters.present.add(guess[i]);
     }
 
-    // First pass: mark correct letters
-    const result = Array(state.wordLength).fill('absent');
+    // Apply flip animations, coloring each tile by its code.
     for (let i = 0; i < state.wordLength; i++) {
-        if (guess[i] === solution[i]) {
-            result[i] = 'correct';
-            solutionLetters[guess[i]]--;
-            state.revealedLetters.correct[i] = guess[i];
-        }
-    }
-
-    // Second pass: mark present letters
-    for (let i = 0; i < state.wordLength; i++) {
-        if (result[i] !== 'correct' && solution.includes(guess[i]) && solutionLetters[guess[i]] > 0) {
-            result[i] = 'present';
-            solutionLetters[guess[i]]--;
-            state.revealedLetters.present.add(guess[i]);
-        }
-    }
-
-    // Apply animations
-    for (let i = 0; i < state.wordLength; i++) {
+        const cls = CLASS[pattern[i]];
         setTimeout(() => {
             const tile = tiles[startIndex + i];
             tile.classList.add('flip');
             setTimeout(() => {
-                tile.classList.add(result[i]);
-                tile.setAttribute('aria-label', `${guess[i].toUpperCase()} ${result[i]}`);
+                tile.classList.add(cls);
+                tile.setAttribute('aria-label', `${guess[i].toUpperCase()} ${cls}`);
             }, 300);
         }, i * 300);
     }
