@@ -491,6 +491,22 @@ body {
     transform: scale(1.05);
 }
 
+/* Busy state while the suggester worker computes (see setBestPlaysBusy). Mostly visible
+   if the modal is dismissed mid-compute, since the modal otherwise covers the header. */
+.header-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.header-btn:disabled:hover {
+    background: var(--bg-tertiary);
+    transform: none;
+}
+
+.header-btn.is-loading svg {
+    animation: spin 1s linear infinite;
+}
+
 .game-info {
     text-align: center;
     flex: 1;

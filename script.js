@@ -134,9 +134,26 @@ function getSuggestions() {
 function openSuggestModal() { document.getElementById('suggest-modal').classList.add('active'); }
 function closeSuggestModal() { document.getElementById('suggest-modal').classList.remove('active'); }
 
+// Guard against overlapping runs. The suggester worker is a singleton, so a second
+// in-flight request would attach a duplicate listener and could resolve with the FIRST
+// run's result — i.e. show stale suggestions for a row you've since moved past (close the
+// modal, submit a guess, reopen). Disabling the button while busy blocks the click that
+// starts a second run; the flag is the belt-and-suspenders guard.
+let bestPlaysBusy = false;
+function setBestPlaysBusy(busy) {
+    bestPlaysBusy = busy;
+    const btn = document.getElementById('best-plays-btn');
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.classList.toggle('is-loading', busy);
+    if (busy) btn.setAttribute('aria-busy', 'true');
+    else btn.removeAttribute('aria-busy');
+}
+
 async function showBestPlays() {
-    if (state.gameOver) return;
+    if (state.gameOver || bestPlaysBusy) return;
     const content = document.getElementById('suggest-content');
+    setBestPlaysBusy(true);
     content.innerHTML = '<div class="suggest-state"><div class="loader-spinner"></div><p>Calculating best plays…</p></div>';
     openSuggestModal();
     try {
@@ -144,6 +161,8 @@ async function showBestPlays() {
     } catch (err) {
         console.error(err);
         content.innerHTML = '<div class="suggest-state"><p>Could not compute suggestions.</p></div>';
+    } finally {
+        setBestPlaysBusy(false);
     }
 }
 
