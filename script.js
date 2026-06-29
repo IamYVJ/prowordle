@@ -12,8 +12,8 @@ const state = {
     wordLength: 4,
     maxTries: 6,
     difficulty: 'easy',
-    dictionary: [],
-    solutions: [],
+    dictionary: new Set(), // allowed guesses for the current length (O(1) lookup)
+    solutions: [],         // common-answer pool for the current length
     revealedLetters: { correct: {}, present: new Set() }
 };
 
@@ -30,11 +30,10 @@ const currentTheme = localStorage.getItem('theme') || 'light';
 document.documentElement.setAttribute('data-theme', currentTheme);
 
 // Loading Screen
+// Word lists are now loaded lazily per length when a game starts (see loadWords),
+// so the boot splash just reveals the app shell.
 window.addEventListener('load', () => {
     setTimeout(() => {
-        state.dictionary = WORDS_4;
-        state.solutions = WORDS_4;
-
         const loadingScreen = document.getElementById('loading-screen');
         const app = document.getElementById('app');
 
@@ -47,9 +46,162 @@ window.addEventListener('load', () => {
     }, 1500);
 });
 
+// Word List Loader
+// Fetches data/words-<n>.json once per length and caches it. This is the single
+// seam between the client and its word data — to make the game server-authoritative
+// later, swap this fetch for a request to the game server (the rest of the code
+// only ever sees a guesses Set + an answers array).
+const wordCache = {};
+async function loadWords(length) {
+    if (wordCache[length]) return wordCache[length];
+    const res = await fetch(`data/words-${length}.json`);
+    if (!res.ok) throw new Error(`Failed to load words-${length}.json (HTTP ${res.status})`);
+    const data = await res.json();
+    const entry = { guesses: new Set(data.guesses), answers: data.answers };
+    wordCache[length] = entry;
+    return entry;
+}
+
+// ===========================================================================
+// Optimal-Play Suggester ("Best plays")
+// ===========================================================================
+// Hardcoded toggle for the probe pool (flip this to change which dictionary the
+// info-gain search considers):
+//   'answers' = score only still-possible answers      (fast, main-thread-friendly)
+//   'full'    = also score non-answer "probe" words     (true optimal, heavier)
+const SUGGEST_PROBE_POOL = 'answers';
+const SUGGEST_TOP_N = 10;       // how many suggestions to list
+const SUGGEST_SMALL_SET = 2;    // <= this many candidates left -> go for the win
+
+// Wordle feedback pattern of `guess` vs `target` as a "210"-style code string
+// (2=correct, 1=present, 0=absent). Must match revealRow()'s two-pass logic.
+function computePattern(guess, target) {
+    const L = guess.length;
+    const code = new Array(L).fill(0);
+    const counts = {};
+    for (const ch of target) counts[ch] = (counts[ch] || 0) + 1;
+    for (let i = 0; i < L; i++) {
+        if (guess[i] === target[i]) { code[i] = 2; counts[guess[i]]--; }
+    }
+    for (let i = 0; i < L; i++) {
+        if (code[i] === 0 && counts[guess[i]] > 0) { code[i] = 1; counts[guess[i]]--; }
+    }
+    return code.join('');
+}
+
+// Bridge to the Web Worker. Sends only the feedback already shown to the player
+// (the worker never receives state.solution), so suggestions can't just leak the answer.
+let suggestWorker = null;
+function getSuggestions() {
+    return new Promise((resolve, reject) => {
+        const words = wordCache[state.wordLength];
+        if (!words) { reject(new Error('Word list not loaded')); return; }
+
+        const observed = state.guesses.map(g => ({ guess: g, pattern: computePattern(g, state.solution) }));
+        const triesLeft = state.maxTries - state.currentRow;
+
+        if (!suggestWorker) suggestWorker = new Worker('suggester.worker.js');
+        const worker = suggestWorker;
+        const cleanup = () => {
+            worker.removeEventListener('message', onMsg);
+            worker.removeEventListener('error', onErr);
+        };
+        const onMsg = (e) => { cleanup(); resolve(e.data); };
+        const onErr = (err) => { cleanup(); reject(err); };
+        worker.addEventListener('message', onMsg);
+        worker.addEventListener('error', onErr);
+
+        worker.postMessage({
+            length: state.wordLength,
+            guesses: SUGGEST_PROBE_POOL === 'full' ? [...words.guesses] : null,
+            answers: words.answers,
+            observed,
+            pool: SUGGEST_PROBE_POOL,
+            topN: SUGGEST_TOP_N,
+            smallThreshold: SUGGEST_SMALL_SET,
+            triesLeft,
+        });
+    });
+}
+
+function openSuggestModal() { document.getElementById('suggest-modal').classList.add('active'); }
+function closeSuggestModal() { document.getElementById('suggest-modal').classList.remove('active'); }
+
+async function showBestPlays() {
+    if (state.gameOver) return;
+    const content = document.getElementById('suggest-content');
+    content.innerHTML = '<div class="suggest-state"><div class="loader-spinner"></div><p>Calculating best plays…</p></div>';
+    openSuggestModal();
+    try {
+        renderSuggestions(await getSuggestions());
+    } catch (err) {
+        console.error(err);
+        content.innerHTML = '<div class="suggest-state"><p>Could not compute suggestions.</p></div>';
+    }
+}
+
+function renderSuggestions(data) {
+    const content = document.getElementById('suggest-content');
+    const { remaining, strategy, suggestions } = data;
+
+    if (strategy === 'none' || !suggestions.length) {
+        content.innerHTML = '<div class="suggest-state"><p>No words match the clues so far.</p></div>';
+        return;
+    }
+
+    const isInfo = strategy === 'info-gain';
+    const heading = isInfo ? '🔍 Maximize information' : '🎯 Go for the win';
+    const sub = remaining === 1 ? 'Only 1 possible word left' : `${remaining} possible words left`;
+
+    // Normalize scores to a 0–100% bar width.
+    const maxScore = isInfo
+        ? Math.max(Math.log2(Math.max(remaining, 2)), ...suggestions.map(s => s.score))
+        : 1;
+
+    const items = suggestions.map((s, i) => {
+        const pct = Math.max(4, Math.round((s.score / maxScore) * 100));
+        const scoreLabel = isInfo
+            ? `<span class="suggest-score-value">${s.score.toFixed(2)}</span><div class="suggest-score-unit">bits</div>`
+            : `<span class="suggest-score-value">#${i + 1}</span><div class="suggest-score-unit">pick</div>`;
+        const tag = s.isAnswer && isInfo ? '<span class="suggest-tag">possible</span>' : '';
+        return `
+            <button class="suggest-item" data-word="${s.word}">
+                <span class="suggest-rank">${i + 1}</span>
+                <span class="suggest-word-wrap">
+                    <span class="suggest-word">${s.word}</span>${tag}
+                    <div class="suggest-bar-track"><div class="suggest-bar-fill" style="width:${pct}%"></div></div>
+                </span>
+                <span class="suggest-score">${scoreLabel}</span>
+            </button>`;
+    }).join('');
+
+    const hint = isInfo
+        ? 'Higher = splits the remaining words more evenly. Tap a word to fill the current row.'
+        : 'Most common of the words that still fit. Tap a word to fill the current row.';
+
+    content.innerHTML = `
+        <div class="suggest-summary">
+            <div class="suggest-strategy">${heading}</div>
+            <div class="suggest-remaining">${sub}</div>
+        </div>
+        <div class="suggest-list">${items}</div>
+        <p class="suggest-hint">${hint}</p>`;
+
+    content.querySelectorAll('.suggest-item').forEach(btn => {
+        btn.addEventListener('click', () => fillCurrentGuess(btn.dataset.word));
+    });
+}
+
+function fillCurrentGuess(word) {
+    if (state.gameOver) return;
+    state.currentGuess = word.slice(0, state.wordLength);
+    updateBoard();
+    closeSuggestModal();
+}
+
 // Home Screen Setup
 function setupHomeScreen() {
-    // Word Length Selection (fixed to 4)
+    // Word Length Selection (4–8; each length loads its own list on Start)
     const lengthButtons = document.querySelectorAll('[data-length]');
     lengthButtons.forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -101,7 +253,29 @@ function updateStatsPreview() {
 }
 
 // Start Game
-function startGame() {
+let startingGame = false;
+async function startGame() {
+    if (startingGame) return; // guard against double-trigger while words load
+    startingGame = true;
+
+    // Load the word list for the chosen length (cached after first fetch).
+    const startBtn = document.getElementById('start-game-btn');
+    const startLabel = startBtn ? startBtn.querySelector('span') : null;
+    const originalLabel = startLabel ? startLabel.textContent : '';
+    if (startLabel) startLabel.textContent = 'Loading words…';
+    try {
+        const words = await loadWords(state.wordLength);
+        state.dictionary = words.guesses; // Set of allowed guesses
+        state.solutions = words.answers;  // common-answer pool
+    } catch (err) {
+        console.error(err);
+        showMessage('Could not load word list. Start a local server and retry.', 3000);
+        return;
+    } finally {
+        if (startLabel) startLabel.textContent = originalLabel;
+        startingGame = false;
+    }
+
     // Reset state
     state.guesses = [];
     state.currentGuess = '';
@@ -112,7 +286,7 @@ function startGame() {
 
     // Select random word
     state.solution = state.solutions[Math.floor(Math.random() * state.solutions.length)];
-    console.log('Solution:', state.solution); // For testing
+    console.log('Solution:', state.solution); // For testing (still client-side in static mode)
 
     // Switch screens
     document.getElementById('home-screen').classList.remove('active');
@@ -228,7 +402,7 @@ function submitGuess() {
         return;
     }
 
-    if (!state.dictionary.includes(state.currentGuess)) {
+    if (!state.dictionary.has(state.currentGuess)) {
         showMessage('Not in word list');
         shakeRow();
         return;
@@ -561,9 +735,16 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('analysis-modal').classList.remove('active');
     });
 
+    // Best plays (optimal-play suggester)
+    document.getElementById('best-plays-btn').addEventListener('click', showBestPlays);
+    document.querySelectorAll('[data-close-suggest]').forEach(el => {
+        el.addEventListener('click', closeSuggestModal);
+    });
+
     // Keyboard events
     document.addEventListener('keydown', (e) => {
         if (state.gameOver) return;
+        if (document.getElementById('suggest-modal').classList.contains('active')) return;
         if (document.getElementById('game-screen').classList.contains('active')) {
             if (e.key === 'Enter') {
                 handleKey('ENTER');
