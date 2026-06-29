@@ -114,7 +114,7 @@ function getSuggestions() {
         worker.postMessage({
             length: state.wordLength,
             guesses: SUGGEST_PROBE_POOL === 'full' ? [...words.guesses] : null,
-            answers: words.answers,
+            answers: state.solutions, // candidate universe (full dict on Hard, common pool otherwise)
             observed,
             pool: SUGGEST_PROBE_POOL,
             topN: SUGGEST_TOP_N,
@@ -151,7 +151,7 @@ function renderSuggestions(data) {
 
     const isInfo = strategy === 'info-gain';
     const heading = isInfo ? '🔍 Maximize information' : '🎯 Go for the win';
-    const sub = remaining === 1 ? 'Only 1 possible word left' : `${remaining} possible words left`;
+    const sub = remaining === 1 ? 'Only 1 possible word left' : `${remaining.toLocaleString()} possible words left`;
 
     // Normalize scores to a 0–100% bar width.
     const maxScore = isInfo
@@ -225,8 +225,8 @@ function setupHomeScreen() {
     const difficultyDesc = document.getElementById('difficulty-description');
     const descriptions = {
         easy: 'Any valid word is allowed',
-        medium: 'Must use all revealed hints (Hard Mode)',
-        hard: 'Includes obscure dictionary words'
+        medium: 'Must reuse every revealed hint',
+        hard: 'Rare words allowed — plus you must reuse every hint'
     };
 
     difficultyButtons.forEach(btn => {
@@ -266,7 +266,11 @@ async function startGame() {
     try {
         const words = await loadWords(state.wordLength);
         state.dictionary = words.guesses; // Set of allowed guesses
-        state.solutions = words.answers;  // common-answer pool
+        // Solution pool by difficulty: Hard pulls from the FULL dictionary, so rare/archaic
+        // words become possible answers; Easy/Medium stay in the common-answer pool. This is
+        // also the universe that Best Plays and the post-game analysis treat as "possible
+        // answers", so they stay consistent with where the secret actually came from.
+        state.solutions = state.difficulty === 'hard' ? [...words.guesses] : words.answers;
     } catch (err) {
         console.error(err);
         showMessage('Could not load word list. Start a local server and retry.', 3000);
@@ -408,8 +412,8 @@ function submitGuess() {
         return;
     }
 
-    // Medium difficulty: Check if revealed hints are used
-    if (state.difficulty === 'medium') {
+    // Medium & Hard: enforce reusing every revealed hint (NYT-style "Hard Mode").
+    if (state.difficulty === 'medium' || state.difficulty === 'hard') {
         if (!validateHardMode()) {
             return;
         }
@@ -640,13 +644,17 @@ function displayAnalysis() {
     const content = document.getElementById('analysis-content');
     content.innerHTML = '';
 
-    const answers = (wordCache[state.wordLength] && wordCache[state.wordLength].answers) || [];
-    const startCount = answers.length;
+    // Candidate universe = the pool the secret was actually drawn from (common answers on
+    // Easy/Medium, the full dictionary on Hard) so the narrowing math stays honest.
+    const pool = (state.solutions && state.solutions.length)
+        ? state.solutions
+        : ((wordCache[state.wordLength] && wordCache[state.wordLength].answers) || []);
+    const startCount = pool.length;
 
     // Walk the guesses, shrinking the candidate pool one feedback pattern at a time.
     // `candidates` always already satisfies every earlier clue, so each step only has
     // to apply the current guess's pattern.
-    let candidates = answers.slice();
+    let candidates = pool.slice();
     const steps = state.guesses.map((guess) => {
         const pattern = computePattern(guess, state.solution);
         const before = candidates.length;
@@ -728,7 +736,7 @@ function analyzeGuess(step, hasPool) {
     }
 
     const reduction = before > 0 ? 1 - after / before : 0;
-    const pct = Math.round(reduction * 100);
+    const pct = Math.floor(reduction * 100); // floor so we never claim 100% while words remain
 
     let quality;
     if (after <= 1) quality = 'That left just one possibility — the answer was locked in.';

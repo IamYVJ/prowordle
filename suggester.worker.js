@@ -39,6 +39,17 @@ function computePattern(guess, target) {
     return res;
 }
 
+// Evenly-spaced subsample of at most `cap` items (deterministic, no RNG). Used to bound
+// the entropy search when the candidate/probe pool is very large (e.g. Hard mode's
+// full-dictionary pool). Pools at or under the cap are returned as-is (scored exactly).
+function subsample(arr, cap) {
+    if (arr.length <= cap) return arr;
+    const out = [];
+    const step = arr.length / cap;
+    for (let i = 0; i < arr.length; i += step) out.push(arr[Math.floor(i)]);
+    return out;
+}
+
 self.onmessage = (e) => {
     const { guesses, answers, observed, pool, topN, smallThreshold, triesLeft } = e.data;
 
@@ -67,20 +78,29 @@ self.onmessage = (e) => {
     }
 
     const candidateSet = new Set(candidates);
-    const probePool = pool === 'full' && guesses ? guesses : candidates;
     const LOG2 = Math.log(2);
+
+    // Bound the entropy search. probes x candidates pattern computations can balloon into
+    // the hundreds of millions on a large pool (Hard mode's full dictionary), so cap both
+    // sides with an evenly-spaced subsample. Entropy over a representative sample closely
+    // approximates the full result while keeping the worker responsive. The common
+    // Easy/Medium answer pools (~1k words) fall under the cap and are scored exactly.
+    const ENTROPY_CAP = 1500;
+    const distCandidates = subsample(candidates, ENTROPY_CAP);
+    const distTotal = distCandidates.length;
+    const probePool = subsample(pool === 'full' && guesses ? guesses : candidates, ENTROPY_CAP);
 
     const scored = [];
     for (const probe of probePool) {
         // Distribution of feedback patterns this probe would produce over the candidates.
         const buckets = new Map();
-        for (const c of candidates) {
+        for (const c of distCandidates) {
             const pat = computePattern(probe, c);
             buckets.set(pat, (buckets.get(pat) || 0) + 1);
         }
         let entropy = 0;
         for (const cnt of buckets.values()) {
-            const p = cnt / remaining;
+            const p = cnt / distTotal;
             entropy -= p * (Math.log(p) / LOG2);
         }
         scored.push({ word: probe, score: entropy, isAnswer: candidateSet.has(probe) });
