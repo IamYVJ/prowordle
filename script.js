@@ -54,10 +54,19 @@ window.addEventListener('load', () => {
 const wordCache = {};
 async function loadWords(length) {
     if (wordCache[length]) return wordCache[length];
-    const res = await fetch(`data/words-${length}.json`);
+    // 'no-cache' = use the cached copy but always revalidate with the server (cheap 304
+    // when unchanged). Without this the browser can serve a stale word list after the data
+    // is rebuilt/redeployed — e.g. returning players would keep seeing removed proper nouns.
+    const res = await fetch(`data/words-${length}.json`, { cache: 'no-cache' });
     if (!res.ok) throw new Error(`Failed to load words-${length}.json (HTTP ${res.status})`);
     const data = await res.json();
-    const entry = { guesses: new Set(data.guesses), answers: data.answers };
+    // hardAnswers = proper-noun-free Hard pool. Fall back to the full guess list if an older
+    // (pre-hardAnswers) data file is served, so Hard still works rather than breaking.
+    const entry = {
+        guesses: new Set(data.guesses),
+        answers: data.answers,
+        hardAnswers: data.hardAnswers || data.guesses,
+    };
     wordCache[length] = entry;
     return entry;
 }
@@ -266,11 +275,12 @@ async function startGame() {
     try {
         const words = await loadWords(state.wordLength);
         state.dictionary = words.guesses; // Set of allowed guesses
-        // Solution pool by difficulty: Hard pulls from the FULL dictionary, so rare/archaic
-        // words become possible answers; Easy/Medium stay in the common-answer pool. This is
-        // also the universe that Best Plays and the post-game analysis treat as "possible
-        // answers", so they stay consistent with where the secret actually came from.
-        state.solutions = state.difficulty === 'hard' ? [...words.guesses] : words.answers;
+        // Solution pool by difficulty: Hard pulls from hardAnswers — the wide, obscure, but
+        // proper-noun-free word set — so rare/archaic words become possible answers without
+        // ever serving a name/place/brand as the secret; Easy/Medium stay in the common-answer
+        // pool. This is also the universe that Best Plays and the post-game analysis treat as
+        // "possible answers", so they stay consistent with where the secret actually came from.
+        state.solutions = state.difficulty === 'hard' ? words.hardAnswers : words.answers;
     } catch (err) {
         console.error(err);
         showMessage('Could not load word list. Start a local server and retry.', 3000);
