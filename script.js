@@ -29,6 +29,15 @@ let stats = JSON.parse(localStorage.getItem('wordleProStats')) || {
 const currentTheme = localStorage.getItem('theme') || 'light';
 document.documentElement.setAttribute('data-theme', currentTheme);
 
+// Debug mode (OFF by default). Enable to log the solution + internals to the console:
+//   • append ?debug to the URL, or
+//   • run localStorage.setItem('wordleDebug', '1') once in devtools.
+// This keeps the answer out of a normal player's console. NOTE: in static mode the solution
+// still lives in client memory (state.solution), so this only removes the trivial giveaway —
+// true anti-cheat requires the server-authoritative mode (see GAME-SERVER-PLATFORM.md).
+const DEBUG = new URLSearchParams(location.search).has('debug')
+    || localStorage.getItem('wordleDebug') === '1';
+
 // Loading Screen
 // Word lists are now loaded lazily per length when a game starts (see loadWords),
 // so the boot splash just reveals the app shell.
@@ -300,7 +309,7 @@ async function startGame() {
 
     // Select random word
     state.solution = state.solutions[Math.floor(Math.random() * state.solutions.length)];
-    console.log('Solution:', state.solution); // For testing (still client-side in static mode)
+    if (DEBUG) console.log('Solution:', state.solution);
 
     // Switch screens
     document.getElementById('home-screen').classList.remove('active');
