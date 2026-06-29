@@ -247,6 +247,10 @@ function setupHomeScreen() {
 
     // Start Game Button
     document.getElementById('start-game-btn').addEventListener('click', startGame);
+
+    // Retry button inside the word-list load-error banner (re-attempts the start).
+    const retryLoadBtn = document.getElementById('retry-load-btn');
+    if (retryLoadBtn) retryLoadBtn.addEventListener('click', startGame);
 }
 
 // Stats Preview
@@ -261,9 +265,26 @@ function updateStatsPreview() {
 
 // Start Game
 let startingGame = false;
+// Show or clear the home-screen word-list load error. Pass a message to reveal the banner
+// (with its Try-again button), or null to hide it. Note the transient showMessage() toast
+// lives in a container on the GAME screen, which is hidden while the home screen is up — so a
+// Start-time failure needs its own visible, persistent banner here rather than a toast.
+function setLoadError(message) {
+    const box = document.getElementById('load-error');
+    if (!box) return;
+    if (message) {
+        const text = document.getElementById('load-error-text');
+        if (text) text.textContent = message;
+        box.hidden = false;
+    } else {
+        box.hidden = true;
+    }
+}
+
 async function startGame() {
     if (startingGame) return; // guard against double-trigger while words load
     startingGame = true;
+    setLoadError(null); // clear any previous failure (e.g. when retrying)
 
     // Load the word list for the chosen length (cached after first fetch).
     const startBtn = document.getElementById('start-game-btn');
@@ -281,7 +302,10 @@ async function startGame() {
         state.solutions = state.difficulty === 'hard' ? words.hardAnswers : words.answers;
     } catch (err) {
         console.error(err);
-        showMessage('Could not load word list. Start a local server and retry.', 3000);
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        setLoadError(offline
+            ? 'You appear to be offline. Reconnect, then try again.'
+            : "Couldn't load the word list. Check your connection and try again.");
         return;
     } finally {
         if (startLabel) startLabel.textContent = originalLabel;

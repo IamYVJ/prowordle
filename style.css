@@ -18,6 +18,7 @@
     --accent-primary: #667eea;
     --accent-secondary: #764ba2;
     --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --error: #d92b2b;
 
     /* Game Colors */
     --correct: #6aaa64;
@@ -42,6 +43,7 @@
     --text-secondary: #a0a0a0;
     --text-tertiary: #6c757d;
     --border-color: #333333;
+    --error: #ff6b6b;
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
@@ -371,6 +373,47 @@ body {
 
 .start-btn:active {
     transform: translateY(-1px);
+}
+
+/* Word-list load error (shown on the home screen when a fetch fails) */
+.load-error {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--error) 12%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--error) 45%, transparent);
+    color: var(--error);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    box-shadow: var(--shadow-sm);
+    animation: messageSlide 0.3s ease;
+}
+
+/* Re-assert hidden: the class sets display:flex, which would otherwise beat [hidden]. */
+.load-error[hidden] {
+    display: none;
+}
+
+.load-error-retry {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: none;
+    background: var(--error);
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+}
+
+.load-error-retry:hover {
+    opacity: 0.88;
 }
 
 /* Stats Preview */
