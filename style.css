@@ -234,6 +234,17 @@ body {
     animation: fade 0.3s ease;
 }
 
+/* Inactive screens stay in the DOM (faded out via opacity/visibility) so the transition can
+   play, but their content can be far taller than the viewport — the home/settings screen is a
+   long scroller. Since they aren't clipped, that height bleeds into the page's scrollable area
+   and creates phantom vertical scroll BEHIND whatever screen is active (you can drag the game
+   board up into empty space on mobile). Cap each hidden screen to one viewport and clip the
+   overflow so only the ACTIVE screen drives page height. */
+.screen:not(.active) {
+    height: 100vh;
+    overflow: hidden;
+}
+
 @keyframes fade {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: none; }
@@ -786,7 +797,9 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-height: calc(100vh - 66px);
+    min-height: calc(100vh - 69px); /* 69px = the sticky game-header's height, so the play area
+                                       fills exactly the space below it without spilling past the
+                                       viewport (the old 66px left ~3px of stray vertical scroll). */
     position: relative; /* positioning context for the Blitz countdown overlay */
 }
 

@@ -1789,12 +1789,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Prevent zoom on double tap (iOS)
-let lastTouchEnd = 0;
-document.addEventListener('touchend', (e) => {
-    const now = Date.now();
-    if (now - lastTouchEnd <= 300) {
-        e.preventDefault();
-    }
-    lastTouchEnd = now;
-}, false);
+// NOTE: Double-tap-to-zoom is already disabled via the viewport meta (maximum-scale=1.0,
+// user-scalable=no) and `touch-action: manipulation` on the keyboard/keys. We deliberately do
+// NOT add a global `touchend` preventDefault here. Such a handler cancels the synthesized
+// `click` on a key whenever two taps land within ~300ms — i.e. during normal fast typing —
+// silently dropping keystrokes and making the keyboard feel laggy/unresponsive on mobile.
