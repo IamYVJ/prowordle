@@ -108,6 +108,17 @@
     --shadow-lg: 0 24px 64px rgba(0, 0, 0, .6);
 }
 
+/* High-contrast / colorblind mode. Swaps the green/yellow feedback (hardest pair for
+   red-green color deficiency) for orange/blue, which stays distinguishable across the
+   common deficiency types. Declared after both theme blocks so it overrides either one;
+   only the feedback vars change, so the rest of each theme is untouched. */
+[data-contrast="high"] {
+    --correct: #f5793a;   /* orange */
+    --present: #85c0f9;   /* sky blue */
+    --on-correct: #1a1206;
+    --on-present: #06223b;
+}
+
 /* ── Reset & base ── */
 * {
     margin: 0;
@@ -474,6 +485,60 @@ body {
     color: var(--text-secondary);
     text-align: center;
 }
+
+/* High-contrast toggle (a role="switch" button) */
+.contrast-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-primary);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    transition: border-color var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.contrast-toggle:hover { border-color: var(--border-2); }
+
+.contrast-toggle-track {
+    position: relative;
+    width: 42px;
+    height: 24px;
+    flex: none;
+    border-radius: var(--radius-pill);
+    background: var(--border-2);
+    transition: background var(--transition-fast);
+}
+
+.contrast-toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .45);
+    transition: transform var(--transition-fast);
+}
+
+.contrast-toggle-state {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.contrast-toggle[aria-checked="true"] .contrast-toggle-track { background: var(--accent-primary); }
+.contrast-toggle[aria-checked="true"] .contrast-toggle-thumb { transform: translateX(18px); }
+.contrast-toggle[aria-checked="true"] .contrast-toggle-state { color: var(--accent-primary); }
 
 /* Range Slider */
 .range-slider {
@@ -1645,6 +1710,19 @@ body {
         animation-iteration-count: 1 !important;
         transition-duration: 0.001ms !important;
     }
+}
+
+/* Visually hidden, but available to assistive tech (e.g. the #sr-announcer live region) */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* Scrollbar Styling */

@@ -120,6 +120,17 @@
                         <p class="difficulty-desc" id="difficulty-description">Any valid word is allowed</p>
                     </div>
 
+                    <div class="setting-group">
+                        <label class="setting-label">
+                            <span class="label-text">High Contrast</span>
+                        </label>
+                        <button id="contrast-toggle" class="contrast-toggle" type="button" role="switch" aria-checked="false">
+                            <span class="contrast-toggle-track" aria-hidden="true"><span class="contrast-toggle-thumb"></span></span>
+                            <span class="contrast-toggle-label">Colorblind-friendly tiles</span>
+                            <span class="contrast-toggle-state" aria-hidden="true">Off</span>
+                        </button>
+                    </div>
+
                     <button id="start-game-btn" class="start-btn">
                         <span>Start Game</span>
                         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -182,7 +193,10 @@
             </header>
 
             <main class="game-main">
-                <div id="message-container" class="message-container"></div>
+                <div id="message-container" class="message-container" role="status" aria-live="assertive" aria-atomic="true"></div>
+
+                <!-- Visually-hidden live region: narrates each guess result and the outcome to screen readers -->
+                <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
                 <div id="game-board" class="game-board"></div>
 
@@ -236,7 +250,7 @@
                     </div>
                 </div>
 
-                <div id="keyboard" class="keyboard"></div>
+                <div id="keyboard" class="keyboard" role="group" aria-label="Keyboard"></div>
             </main>
         </div>
 

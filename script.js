@@ -36,6 +36,12 @@ if (!stats.dist || typeof stats.dist !== 'object') stats.dist = {};
 const currentTheme = localStorage.getItem('theme') || 'dark';
 document.documentElement.setAttribute('data-theme', currentTheme);
 
+// High-contrast / colorblind mode. Applied before first paint so there's no color flash.
+const CONTRAST_KEY = 'wordleProContrast';
+if (localStorage.getItem(CONTRAST_KEY) === 'high') {
+    document.documentElement.setAttribute('data-contrast', 'high');
+}
+
 // Debug mode (OFF by default). Enable to log the solution + internals to the console:
 //   • append ?debug to the URL, or
 //   • run localStorage.setItem('wordleDebug', '1') once in devtools.
@@ -625,6 +631,8 @@ async function startDailyChallenge() {
 function initBoard() {
     const board = document.getElementById('game-board');
     board.innerHTML = '';
+    board.setAttribute('role', 'grid');
+    board.setAttribute('aria-label', `Game board: ${state.maxTries} guesses of ${state.wordLength} letters`);
     board.style.gridTemplateColumns = `repeat(${state.wordLength}, 1fr)`;
     board.style.gridTemplateRows = `repeat(${state.maxTries}, 1fr)`;
     board.style.setProperty('--cols', state.wordLength);
@@ -656,7 +664,8 @@ function initKeyboard() {
             button.className = key.length > 1 ? 'key wide' : 'key';
             button.textContent = key;
             button.setAttribute('data-key', key);
-            button.setAttribute('aria-label', key);
+            // The "⌫" glyph isn't announced meaningfully, so give it a spoken name.
+            button.setAttribute('aria-label', key === '⌫' ? 'Backspace' : key);
             button.addEventListener('click', () => handleKey(key));
             rowDiv.appendChild(button);
         });
@@ -741,12 +750,15 @@ function submitGuess() {
         state.gameOver = true;
         setTimeout(() => {
             bounceRow();
+            const n = state.guesses.length;
+            announce(`You won in ${n} ${n === 1 ? 'guess' : 'guesses'}! The word was ${state.solution.toUpperCase()}.`);
             updateStats(true, state.guesses.length);
             setTimeout(() => showResult(), 1500);
         }, 1500);
     } else if (state.currentRow === state.maxTries - 1) {
         state.gameOver = true;
         setTimeout(() => {
+            announce(`Out of tries. The word was ${state.solution.toUpperCase()}.`);
             updateStats(false);
             setTimeout(() => showResult(), 1500);
         }, 1500);
@@ -799,6 +811,9 @@ function revealRow(animate = true) {
         else if (pattern[i] === '1') state.revealedLetters.present.add(guess[i]);
     }
 
+    // Narrate this guess for screen readers (skip the silent replay of a saved Daily board).
+    if (animate) announceGuess(guess, pattern);
+
     // Apply flip animations, coloring each tile by its code.
     for (let i = 0; i < state.wordLength; i++) {
         const cls = CLASS[pattern[i]];
@@ -840,6 +855,12 @@ function updateKeyboard() {
         } else if (!key.classList.contains('correct') && !key.classList.contains('present')) {
             key.classList.add('absent');
         }
+
+        // Reflect the key's status in its accessible name (e.g. "A, absent").
+        const status = key.classList.contains('correct') ? 'correct'
+            : key.classList.contains('present') ? 'wrong position'
+            : key.classList.contains('absent') ? 'absent' : '';
+        key.setAttribute('aria-label', status ? `${letter}, ${status}` : letter);
     }
 }
 
@@ -881,6 +902,23 @@ function showMessage(text, duration = 2000) {
     setTimeout(() => {
         message.remove();
     }, duration);
+}
+
+// Screen-reader narration. Writes to the visually-hidden #sr-announcer live region so
+// assistive tech reads it aloud. Used for guess feedback and the game outcome (board
+// colors alone aren't perceivable without sight).
+function announce(text) {
+    const region = document.getElementById('sr-announcer');
+    if (region) region.textContent = text;
+}
+
+function announceGuess(guess, pattern) {
+    const WORD = { '2': 'correct', '1': 'wrong position', '0': 'absent' };
+    const parts = [];
+    for (let i = 0; i < guess.length; i++) {
+        parts.push(`${guess[i].toUpperCase()} ${WORD[pattern[i]] || 'absent'}`);
+    }
+    announce(`Row ${state.currentRow + 1}: ${parts.join(', ')}`);
 }
 
 // Show Result Display
@@ -1309,6 +1347,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
     document.getElementById('home-theme-toggle').addEventListener('click', toggleTheme);
+
+    // High-contrast toggle (home settings card). Flips the data-contrast attribute, persists
+    // the choice, and keeps the switch's accessible state + label in sync.
+    const contrastToggle = document.getElementById('contrast-toggle');
+    function syncContrastToggle() {
+        const on = document.documentElement.getAttribute('data-contrast') === 'high';
+        contrastToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+        const stateLabel = contrastToggle.querySelector('.contrast-toggle-state');
+        if (stateLabel) stateLabel.textContent = on ? 'On' : 'Off';
+    }
+    if (contrastToggle) {
+        syncContrastToggle();
+        contrastToggle.addEventListener('click', () => {
+            const on = document.documentElement.getAttribute('data-contrast') === 'high';
+            if (on) {
+                document.documentElement.removeAttribute('data-contrast');
+            } else {
+                document.documentElement.setAttribute('data-contrast', 'high');
+            }
+            try { localStorage.setItem(CONTRAST_KEY, on ? 'normal' : 'high'); } catch (e) { /* storage unavailable */ }
+            syncContrastToggle();
+        });
+    }
 
     // How to Play guide ("?" button on the home screen; closes via its own scoped controls)
     document.getElementById('home-help-btn').addEventListener('click', openHelp);
