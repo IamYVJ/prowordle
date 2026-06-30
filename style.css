@@ -2039,6 +2039,131 @@ body {
     line-height: 1.5;
 }
 
+/* Multi-Wordle hints (Dordle / Quordle / Octordle) — reuses .suggest-summary/.suggest-hint */
+.qhint-rec {
+    margin-bottom: 18px;
+}
+
+.qhint-rec-label {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.qhint-rec-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: border-color var(--transition-fast), transform 0.06s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.qhint-rec-btn:active { transform: scale(0.99); }
+
+.qhint-rec-sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.qhint-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.qhint-board {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+
+.qhint-board.solved {
+    border-color: var(--correct);
+}
+
+.qhint-badge {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-pill);
+    background: var(--border-color);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.qhint-board.solved .qhint-badge {
+    background: var(--correct);
+    color: var(--on-correct);
+}
+
+.qhint-cells {
+    display: flex;
+    gap: 3px;
+}
+
+.qhint-cell {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: var(--bg-secondary);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+
+.qhint-cell.known {
+    background: var(--correct);
+    border-color: var(--correct);
+    color: var(--on-correct);
+}
+
+.qhint-status {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    text-align: right;
+    line-height: 1.4;
+}
+
+.qhint-board.solved .qhint-status {
+    color: var(--correct);
+}
+
+.qhint-status-word {
+    color: var(--text-primary);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
 /* ── Hover (pointer devices only — avoids sticky hover on touch) ── */
 @media (hover: hover) {
     .option-btn:hover, .difficulty-btn:hover {
@@ -2059,6 +2184,7 @@ body {
     .key:hover { background: color-mix(in srgb, var(--key-bg) 80%, var(--text-primary)); }
     .modal-close:hover { border-color: var(--text-primary); }
     .suggest-item:hover { border-color: var(--accent-primary); }
+    .qhint-rec-btn:hover { border-color: var(--accent-2); }
 }
 
 /* ── Responsive ── */

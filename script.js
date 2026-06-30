@@ -1232,6 +1232,7 @@ async function startQuordle(boards) {
 function exitQuordleMode() {
     state.isQuordle = false;
     quordleLock = false;
+    closeQuordleHintModal(); // dismiss the Hints modal if it was left open
     const panel = document.getElementById('quordle-result');
     if (panel) panel.style.display = 'none';
 }
@@ -1460,6 +1461,144 @@ function showQuordleResult(won, isNewBest) {
 
     panel.style.display = 'block';
     setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Wordle hints (Dordle / Quordle / Octordle)
+// ---------------------------------------------------------------------------
+// A fair in-game assistant: each board's candidate set is filtered using ONLY the
+// feedback already shown on that board (the same "210" patterns the player can see),
+// then the modal surfaces, per board, a confirmed-green mask + how many words still
+// fit (listing them once the field is tiny), plus ONE recommended next guess — the top
+// candidate for the most-constrained unsolved board (the standard "pick off the closest
+// board first" strategy). Pure main-thread: boards x answers x guesses pattern checks is
+// a few milliseconds even for an Octordle late-game, so no worker is needed.
+const QHINT_REVEAL_AT = 6; // when an unsolved board has <= this many candidates, list them
+
+function quordleAnswerPool() {
+    const words = wordCache[QUORDLE_LENGTH];
+    return (words && words.answers) ? words.answers : [];
+}
+
+// Per-board snapshot: solved flag + solving row, confirmed greens by position, and the
+// answers still consistent with that board's clues (most-common first, like the pool).
+function quordleBoardHints() {
+    const pool = quordleAnswerPool();
+    const out = [];
+    for (let b = 0; b < quordle.boards; b++) {
+        const solution = quordle.solutions[b];
+        const observed = quordle.guesses.map(g => ({ guess: g, pattern: computePattern(g, solution) }));
+        const greens = new Array(QUORDLE_LENGTH).fill(null);
+        for (const o of observed) {
+            for (let i = 0; i < QUORDLE_LENGTH; i++) {
+                if (o.pattern[i] === '2') greens[i] = o.guess[i];
+            }
+        }
+        const candidates = pool.filter(a => observed.every(o => computePattern(o.guess, a) === o.pattern));
+        out.push({
+            board: b,
+            solved: quordle.solved[b],
+            solvedRow: quordle.solvedRow[b],
+            greens,
+            candidates,
+            remaining: candidates.length,
+        });
+    }
+    return out;
+}
+
+function openQuordleHintModal() { document.getElementById('quordle-hint-modal').classList.add('active'); }
+function closeQuordleHintModal() { document.getElementById('quordle-hint-modal').classList.remove('active'); }
+
+function showQuordleHints() {
+    if (!state.isQuordle) return;
+    const content = document.getElementById('quordle-hint-content');
+    if (!content) return;
+
+    if (!quordleAnswerPool().length) {
+        content.innerHTML = '<div class="suggest-state"><p>Hints aren’t ready yet — start a game first.</p></div>';
+        openQuordleHintModal();
+        return;
+    }
+
+    const boards = quordleBoardHints();
+    const solvedCount = boards.filter(x => x.solved).length;
+    const used = quordle.guesses.length;
+
+    // Recommended next guess: top candidate of the most-constrained unsolved board (fewest
+    // possibilities; ties resolve to the lowest board index). Suppressed once the game ends.
+    let rec = null;
+    if (!state.gameOver) {
+        for (const x of boards) {
+            if (x.solved || x.remaining === 0) continue;
+            if (!rec || x.remaining < rec.remaining) rec = x;
+        }
+    }
+    const noGuessesYet = used === 0;
+
+    let recHtml = '';
+    if (rec && rec.candidates.length) {
+        const word = rec.candidates[0];
+        const sub = noGuessesYet ? 'Strong opener' : `Best shot at board ${rec.board + 1} · ${rec.remaining} left`;
+        recHtml = `
+            <div class="qhint-rec">
+                <div class="qhint-rec-label">Recommended next guess</div>
+                <button class="qhint-rec-btn" data-word="${word}" type="button">
+                    <span class="suggest-word">${word.toUpperCase()}</span>
+                    <span class="qhint-rec-sub">${sub}</span>
+                </button>
+            </div>`;
+    }
+
+    const rows = boards.map(x => {
+        const cells = x.greens.map(g =>
+            `<span class="qhint-cell${g ? ' known' : ''}">${g ? g.toUpperCase() : ''}</span>`
+        ).join('');
+        let status;
+        if (x.solved) {
+            status = `Solved · guess ${x.solvedRow + 1}`;
+        } else if (x.remaining === 0) {
+            status = 'No matching words';
+        } else if (x.remaining <= QHINT_REVEAL_AT) {
+            const list = x.candidates.slice(0, QHINT_REVEAL_AT)
+                .map(w => `<span class="qhint-status-word">${w.toUpperCase()}</span>`).join(', ');
+            status = `${x.remaining} left: ${list}`;
+        } else {
+            status = `${x.remaining.toLocaleString()} possible`;
+        }
+        return `
+            <div class="qhint-board${x.solved ? ' solved' : ''}">
+                <span class="qhint-badge">${x.board + 1}</span>
+                <div class="qhint-cells">${cells}</div>
+                <span class="qhint-status">${status}</span>
+            </div>`;
+    }).join('');
+
+    const footer = state.gameOver
+        ? 'Game over — here’s how each board stood.'
+        : 'Tap the recommended word to fill it in. Tip: knock out the board with the fewest words left first.';
+
+    content.innerHTML = `
+        <div class="suggest-summary">
+            <div class="suggest-strategy">💡 ${QUORDLE_NAMES[quordle.boards]} hints</div>
+            <div class="suggest-remaining">${solvedCount}/${quordle.boards} solved · ${used}/${quordle.tries} guesses</div>
+        </div>
+        ${recHtml}
+        <div class="qhint-list">${rows}</div>
+        <p class="suggest-hint">${footer}</p>`;
+
+    const recBtn = content.querySelector('.qhint-rec-btn');
+    if (recBtn) recBtn.addEventListener('click', () => fillQuordleGuess(recBtn.dataset.word));
+
+    openQuordleHintModal();
+}
+
+// Tap a recommended word -> drop it into the shared guess row (mirrors fillCurrentGuess).
+function fillQuordleGuess(word) {
+    if (state.gameOver || quordleLock) return;
+    quordle.currentGuess = (word || '').slice(0, QUORDLE_LENGTH).toLowerCase();
+    updateQuordleBoards();
+    closeQuordleHintModal();
 }
 
 // Initialize Game Board
@@ -2315,6 +2454,13 @@ document.addEventListener('DOMContentLoaded', () => {
         el.addEventListener('click', closeSuggestModal);
     });
 
+    // Multi-Wordle hints (Dordle / Quordle / Octordle)
+    const quordleHintBtn = document.getElementById('quordle-hint-btn');
+    if (quordleHintBtn) quordleHintBtn.addEventListener('click', showQuordleHints);
+    document.querySelectorAll('[data-close-quordle-hint]').forEach(el => {
+        el.addEventListener('click', closeQuordleHintModal);
+    });
+
     // Keyboard events
     document.addEventListener('keydown', (e) => {
         // While the How-to-Play guide is open, swallow keys (so the board behind it doesn't
@@ -2322,6 +2468,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // works on the result screen.
         if (document.getElementById('help-modal').classList.contains('active')) {
             if (e.key === 'Escape') closeHelp();
+            return;
+        }
+        // Multi-Wordle Hints modal: swallow typing behind it, Escape dismisses. Checked before
+        // the game-over guard so Escape still works if hints are opened on the result screen.
+        if (document.getElementById('quordle-hint-modal').classList.contains('active')) {
+            if (e.key === 'Escape') closeQuordleHintModal();
             return;
         }
         if (state.gameOver) return;
