@@ -1293,6 +1293,31 @@ body {
 /* Home CTA: transparent like Blitz so only Daily carries the accent fill. */
 .quordle-btn { background: transparent; }
 
+/* CTA + word-count selector stack as one unit (the .home-content gap:24px
+   sits above/below the wrapper, not between the button and its pills). */
+.quordle-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.quordle-words {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quordle-words-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.quordle-words .option-btn { flex: 1 1 0; }
+
 /* Wider than .game-main to fit a 2x2 grid of boards; content is tall so the
    ACTIVE screen scrolls naturally (only inactive screens are clipped). */
 .quordle-main {
@@ -1330,6 +1355,14 @@ body {
 
 /* A board that's been solved fades back so attention goes to the unsolved ones. */
 .quordle-board.solved { opacity: 0.5; }
+
+/* Board count drives layout. 2/4 boards keep the 2-column grid at every width;
+   8 boards (Octordle) stay 2-wide on phones but spread to 4 columns on wider
+   screens, where the main also widens so the tiles stay legible. */
+@media (min-width: 720px) {
+    .quordle-main[data-boards="8"] { max-width: 880px; }
+    .quordle-grid[data-boards="8"] { grid-template-columns: repeat(4, 1fr); }
+}
 
 /* Run summary */
 .quordle-result .result-actions.is-quordle { grid-template-columns: 1fr; }

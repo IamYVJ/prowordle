@@ -71,21 +71,29 @@
                     </svg>
                 </button>
 
-                <button id="quordle-challenge-btn" class="daily-btn quordle-btn" type="button">
-                    <svg class="daily-btn-cal" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
-                        <rect x="13" y="3.5" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
-                        <rect x="3.5" y="13" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
-                        <rect x="13" y="13" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                    <span class="daily-btn-text">
-                        <span class="daily-btn-title">Quordle</span>
-                        <span class="daily-btn-sub" id="quordle-btn-sub">Solve 4 words at once · 9 guesses</span>
-                    </span>
-                    <svg class="daily-btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
+                <div class="quordle-cta">
+                    <button id="quordle-challenge-btn" class="daily-btn quordle-btn" type="button">
+                        <svg class="daily-btn-cal" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
+                            <rect x="13" y="3.5" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
+                            <rect x="3.5" y="13" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
+                            <rect x="13" y="13" width="7.5" height="7.5" rx="1.6" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <span class="daily-btn-text">
+                            <span class="daily-btn-title" id="quordle-btn-title">Quordle</span>
+                            <span class="daily-btn-sub" id="quordle-btn-sub">Solve 4 words at once · 9 guesses</span>
+                        </span>
+                        <svg class="daily-btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <div class="quordle-words" role="group" aria-label="Number of words to solve at once">
+                        <span class="quordle-words-label">Words</span>
+                        <button class="option-btn" data-quordle-boards="2" type="button">2</button>
+                        <button class="option-btn active" data-quordle-boards="4" type="button">4</button>
+                        <button class="option-btn" data-quordle-boards="8" type="button">8</button>
+                    </div>
+                </div>
 
                 <div class="home-divider"><span>or build your own</span></div>
 
@@ -351,12 +359,7 @@
                 <!-- Visually-hidden live region: narrates guess results and the outcome to screen readers -->
                 <div id="quordle-sr" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
-                <div class="quordle-grid">
-                    <div class="quordle-board" data-board="0" aria-label="Board 1"></div>
-                    <div class="quordle-board" data-board="1" aria-label="Board 2"></div>
-                    <div class="quordle-board" data-board="2" aria-label="Board 3"></div>
-                    <div class="quordle-board" data-board="3" aria-label="Board 4"></div>
-                </div>
+                <div class="quordle-grid" id="quordle-grid"></div>
 
                 <!-- Quordle run summary -->
                 <div id="quordle-result" class="result-display quordle-result" style="display: none;">

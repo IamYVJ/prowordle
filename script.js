@@ -950,9 +950,10 @@ function showBlitzResult(score, best, isNewBest) {
 // not quadrant-split) to stay consistent with the theme/high-contrast/ARIA model.
 // Only the personal best (fewest guesses to clear all four) is persisted — Quordle
 // never touches the normal win/streak stats.
-const QUORDLE_BOARDS = 4;
-const QUORDLE_LENGTH = 5;
-const QUORDLE_TRIES = 9;
+const QUORDLE_COUNTS = [2, 4, 8];          // selectable board counts: Dordle / Quordle / Octordle
+const QUORDLE_LENGTH = 5;                  // every board is a 5-letter word
+const QUORDLE_EXTRA_GUESSES = 5;           // guesses allowed = boards + 5 (so 7 / 9 / 13)
+const QUORDLE_NAMES = { 2: 'Dordle', 4: 'Quordle', 8: 'Octordle' };
 const QUORDLE_KEY = 'wordleProQuordle';
 
 // Input lock raised during the reveal animation so a fast typist can't submit onto a
@@ -960,34 +961,79 @@ const QUORDLE_KEY = 'wordleProQuordle';
 let quordleLock = false;
 let startingQuordle = false;
 const quordle = {
-    solutions: [],   // the 4 secret words, indexed by board
+    boards: 4,       // how many boards this run (2/4/8)
+    tries: 9,        // guesses allowed this run (boards + QUORDLE_EXTRA_GUESSES)
+    solutions: [],   // the secret words, indexed by board
     solved: [],      // bool per board
     solvedRow: [],   // 0-based guess index each board was solved on (drives the summary)
     guesses: [],     // shared guess history (lowercase)
     currentGuess: '' // the row currently being typed
 };
 
-// Best = fewest guesses to clear all four (LOWER is better; 0 = no win yet).
-function loadQuordleBest() {
-    try {
-        const b = JSON.parse(localStorage.getItem(QUORDLE_KEY));
-        return (b && typeof b.best === 'number' && b.best > 0) ? b.best : 0;
-    } catch (e) { return 0; }
+// Persisted as { best: { "2":n, "4":n, "8":n }, sel: N }. Per-count best = fewest guesses
+// to clear every board (LOWER is better; absent = no win yet). sel = last-picked count.
+// A legacy { best: n } value (from the 4-only version) migrates to a 4-board best.
+function loadQuordleData() {
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(QUORDLE_KEY)); } catch (e) { raw = null; }
+    const data = { best: {}, sel: 4 };
+    if (raw && typeof raw === 'object') {
+        if (typeof raw.best === 'number') {
+            if (raw.best > 0) data.best['4'] = raw.best; // legacy: best was always the 4-board game
+        } else if (raw.best && typeof raw.best === 'object') {
+            for (const n of QUORDLE_COUNTS) {
+                const v = raw.best[n];
+                if (typeof v === 'number' && v > 0) data.best[n] = v;
+            }
+        }
+        if (QUORDLE_COUNTS.includes(raw.sel)) data.sel = raw.sel;
+    }
+    return data;
 }
 
-function saveQuordleBest(guesses) {
-    try { localStorage.setItem(QUORDLE_KEY, JSON.stringify({ best: guesses })); }
-    catch (e) { /* storage unavailable — best just won't persist */ }
+function saveQuordleData(data) {
+    try { localStorage.setItem(QUORDLE_KEY, JSON.stringify(data)); }
+    catch (e) { /* storage unavailable — won't persist */ }
 }
 
-// Refresh the home-screen Quordle button's sub-label with the saved best.
+function loadQuordleBest(boards) {
+    const v = loadQuordleData().best[boards];
+    return (typeof v === 'number' && v > 0) ? v : 0;
+}
+
+function saveQuordleBest(boards, guesses) {
+    const data = loadQuordleData();
+    data.best[boards] = guesses;
+    saveQuordleData(data);
+}
+
+function loadQuordleSel() {
+    return loadQuordleData().sel;
+}
+
+function saveQuordleSel(boards) {
+    const data = loadQuordleData();
+    data.sel = boards;
+    saveQuordleData(data);
+}
+
+// Refresh the home-screen Quordle CTA (title + sub-label) and the word-count pills to
+// reflect the currently-selected board count and its saved best.
 function updateQuordleButton() {
+    const sel = loadQuordleSel();
+    const tries = sel + QUORDLE_EXTRA_GUESSES;
+    const best = loadQuordleBest(sel);
+    const title = document.getElementById('quordle-btn-title');
     const sub = document.getElementById('quordle-btn-sub');
-    if (!sub) return;
-    const best = loadQuordleBest();
-    sub.textContent = best > 0
-        ? `Solve 4 words at once · Best ${best}/${QUORDLE_TRIES}`
-        : `Solve 4 words at once · ${QUORDLE_TRIES} guesses`;
+    if (title) title.textContent = QUORDLE_NAMES[sel];
+    if (sub) {
+        sub.textContent = best > 0
+            ? `Solve ${sel} words at once · Best ${best}/${tries}`
+            : `Solve ${sel} words at once · ${tries} guesses`;
+    }
+    document.querySelectorAll('.quordle-words .option-btn').forEach(btn => {
+        btn.classList.toggle('active', Number(btn.dataset.quordleBoards) === sel);
+    });
 }
 
 // Screen-reader narration for Quordle (its own live region, since the game screen's is inactive).
@@ -998,7 +1044,7 @@ function qAnnounce(text) {
 
 function qAnnounceGuess(guess, rowIdx) {
     const solvedNow = [];
-    for (let b = 0; b < QUORDLE_BOARDS; b++) {
+    for (let b = 0; b < quordle.boards; b++) {
         if (quordle.solvedRow[b] === rowIdx) solvedNow.push(b + 1);
     }
     let msg = `Guess ${rowIdx + 1}: ${guess.toUpperCase()}.`;
@@ -1010,7 +1056,7 @@ function updateQuordleMeta() {
     const el = document.getElementById('quordle-meta');
     if (!el) return;
     const solvedCount = quordle.solved.filter(Boolean).length;
-    el.textContent = `Quordle • ${quordle.guesses.length}/${QUORDLE_TRIES} guesses • ${solvedCount}/${QUORDLE_BOARDS} solved`;
+    el.textContent = `${QUORDLE_NAMES[quordle.boards]} • ${quordle.guesses.length}/${quordle.tries} guesses • ${solvedCount}/${quordle.boards} solved`;
 }
 
 function qBoardEl(idx) {
@@ -1022,23 +1068,30 @@ function qBoardTiles(idx) {
     return board ? board.querySelectorAll('.tile') : [];
 }
 
-// Build the four boards (each QUORDLE_TRIES rows x QUORDLE_LENGTH cols of tiles).
+// Build quordle.boards boards from scratch (each quordle.tries rows x QUORDLE_LENGTH cols of
+// tiles) inside the grid. The grid + main carry data-boards so CSS can pick the layout.
 function initQuordleBoards() {
-    for (let b = 0; b < QUORDLE_BOARDS; b++) {
-        const board = qBoardEl(b);
-        if (!board) continue;
-        board.innerHTML = '';
+    const grid = document.getElementById('quordle-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    grid.setAttribute('data-boards', quordle.boards);
+    const main = document.querySelector('.quordle-main');
+    if (main) main.setAttribute('data-boards', quordle.boards);
+    for (let b = 0; b < quordle.boards; b++) {
+        const board = document.createElement('div');
+        board.className = 'quordle-board';
+        board.setAttribute('data-board', b);
         board.setAttribute('role', 'grid');
-        board.setAttribute('aria-label', `Board ${b + 1}: ${QUORDLE_TRIES} guesses of ${QUORDLE_LENGTH} letters`);
+        board.setAttribute('aria-label', `Board ${b + 1}: ${quordle.tries} guesses of ${QUORDLE_LENGTH} letters`);
         board.style.setProperty('--cols', QUORDLE_LENGTH);
-        board.classList.remove('solved');
-        for (let i = 0; i < QUORDLE_TRIES * QUORDLE_LENGTH; i++) {
+        for (let i = 0; i < quordle.tries * QUORDLE_LENGTH; i++) {
             const tile = document.createElement('div');
             tile.className = 'tile';
             tile.setAttribute('role', 'gridcell');
             tile.setAttribute('aria-label', 'Empty tile');
             board.appendChild(tile);
         }
+        grid.appendChild(board);
     }
 }
 
@@ -1081,8 +1134,10 @@ function pickDistinct(pool, n) {
     return picks;
 }
 
-async function startQuordle() {
+async function startQuordle(boards) {
     if (startingQuordle) return;
+    // Resolve & validate the requested board count (fall back to the saved selection).
+    if (!QUORDLE_COUNTS.includes(boards)) boards = loadQuordleSel();
     startingQuordle = true;
     setLoadError(null);
 
@@ -1105,7 +1160,10 @@ async function startQuordle() {
         startingQuordle = false;
     }
 
-    // Fixed Quordle config + a clean slate.
+    // Config for the chosen board count + a clean slate.
+    quordle.boards = boards;
+    quordle.tries = boards + QUORDLE_EXTRA_GUESSES;
+    saveQuordleSel(boards); // remember the pick for the home CTA + next launch
     state.wordLength = QUORDLE_LENGTH;
     state.dictionary = words.guesses;
     state.isDaily = false;
@@ -1114,9 +1172,9 @@ async function startQuordle() {
     state.gameOver = false;
     exitBlitzMode(); // tear down any in-progress Blitz run (timer/HUD/lock)
 
-    quordle.solutions = pickDistinct(words.answers, QUORDLE_BOARDS);
-    quordle.solved = [false, false, false, false];
-    quordle.solvedRow = [-1, -1, -1, -1];
+    quordle.solutions = pickDistinct(words.answers, quordle.boards);
+    quordle.solved = new Array(quordle.boards).fill(false);
+    quordle.solvedRow = new Array(quordle.boards).fill(-1);
     quordle.guesses = [];
     quordle.currentGuess = '';
     quordleLock = false;
@@ -1161,8 +1219,8 @@ function handleQuordleKey(key) {
 // are frozen at their solving row, so they keep their final coloured state).
 function updateQuordleBoards() {
     const rowIdx = quordle.guesses.length;
-    if (rowIdx >= QUORDLE_TRIES) return;
-    for (let b = 0; b < QUORDLE_BOARDS; b++) {
+    if (rowIdx >= quordle.tries) return;
+    for (let b = 0; b < quordle.boards; b++) {
         if (quordle.solved[b]) continue;
         const tiles = qBoardTiles(b);
         const start = rowIdx * QUORDLE_LENGTH;
@@ -1201,7 +1259,7 @@ function submitQuordleGuess() {
     quordleLock = true; // freeze input until the reveal completes
 
     // Reveal on every unsolved board; flag any board this guess solves.
-    for (let b = 0; b < QUORDLE_BOARDS; b++) {
+    for (let b = 0; b < quordle.boards; b++) {
         if (quordle.solved[b]) continue;
         revealQuordleBoard(b, rowIdx, guess, true);
         if (guess === quordle.solutions[b]) {
@@ -1255,7 +1313,7 @@ function updateQuordleKeyboard() {
     const rank = {}; // letter -> 3 correct / 2 present / 1 absent
     const CLASSRANK = { '2': 3, '1': 2, '0': 1 };
     for (const guess of quordle.guesses) {
-        for (let b = 0; b < QUORDLE_BOARDS; b++) {
+        for (let b = 0; b < quordle.boards; b++) {
             const pattern = computePattern(guess, quordle.solutions[b]);
             for (let i = 0; i < guess.length; i++) {
                 const letter = guess[i].toUpperCase();
@@ -1279,24 +1337,24 @@ function updateQuordleKeyboard() {
 // After the reveal animation: fade solved boards, then resolve win/loss or unlock for the next guess.
 function afterQuordleReveal() {
     if (!state.isQuordle) return;
-    for (let b = 0; b < QUORDLE_BOARDS; b++) {
+    for (let b = 0; b < quordle.boards; b++) {
         if (quordle.solved[b]) {
             const el = qBoardEl(b);
             if (el) el.classList.add('solved');
         }
     }
     const solvedCount = quordle.solved.filter(Boolean).length;
-    if (solvedCount === QUORDLE_BOARDS) {
+    if (solvedCount === quordle.boards) {
         state.gameOver = true;
         const used = quordle.guesses.length;
-        const prevBest = loadQuordleBest();
+        const prevBest = loadQuordleBest(quordle.boards);
         const isNewBest = prevBest === 0 || used < prevBest;
-        if (isNewBest) saveQuordleBest(used);
-        qAnnounce(`Solved all four in ${used} ${used === 1 ? 'guess' : 'guesses'}.`);
+        if (isNewBest) saveQuordleBest(quordle.boards, used);
+        qAnnounce(`Solved all ${quordle.boards} in ${used} ${used === 1 ? 'guess' : 'guesses'}.`);
         showQuordleResult(true, isNewBest);
-    } else if (quordle.guesses.length >= QUORDLE_TRIES) {
+    } else if (quordle.guesses.length >= quordle.tries) {
         state.gameOver = true;
-        qAnnounce(`Out of guesses. You solved ${solvedCount} of ${QUORDLE_BOARDS}.`);
+        qAnnounce(`Out of guesses. You solved ${solvedCount} of ${quordle.boards}.`);
         showQuordleResult(false, false);
     } else {
         quordleLock = false; // keep playing
@@ -1305,13 +1363,13 @@ function afterQuordleReveal() {
 }
 
 function shakeQuordle() {
-    for (let b = 0; b < QUORDLE_BOARDS; b++) {
+    for (let b = 0; b < quordle.boards; b++) {
         if (quordle.solved[b]) continue;
         const el = qBoardEl(b);
         if (el) el.classList.add('shake');
     }
     setTimeout(() => {
-        for (let b = 0; b < QUORDLE_BOARDS; b++) {
+        for (let b = 0; b < quordle.boards; b++) {
             const el = qBoardEl(b);
             if (el) el.classList.remove('shake');
         }
@@ -1334,22 +1392,22 @@ function showQuordleResult(won, isNewBest) {
 
     if (won) {
         if (icon) icon.textContent = isNewBest ? '🏆' : '🎉';
-        if (title) title.textContent = isNewBest ? 'New best!' : 'Solved all four!';
-        if (summary) summary.textContent = `All four solved in ${used} ${used === 1 ? 'guess' : 'guesses'}.`;
+        if (title) title.textContent = isNewBest ? 'New best!' : `Solved all ${quordle.boards}!`;
+        if (summary) summary.textContent = `All ${quordle.boards} solved in ${used} ${used === 1 ? 'guess' : 'guesses'}.`;
     } else {
         if (icon) icon.textContent = '😔';
         if (title) title.textContent = 'Out of guesses';
-        if (summary) summary.textContent = `You solved ${solvedCount} of ${QUORDLE_BOARDS}.`;
+        if (summary) summary.textContent = `You solved ${solvedCount} of ${quordle.boards}.`;
     }
 
-    const best = loadQuordleBest();
-    if (bestEl) bestEl.textContent = best > 0 ? `${best}/${QUORDLE_TRIES}` : '—';
+    const best = loadQuordleBest(quordle.boards);
+    if (bestEl) bestEl.textContent = best > 0 ? `${best}/${quordle.tries}` : '—';
     if (badge) badge.style.display = isNewBest ? '' : 'none';
 
-    // List all four words: solved ones tag the guess they fell on; missed ones reveal the word.
+    // List every word: solved ones tag the guess they fell on; missed ones reveal the word.
     if (list) {
         list.innerHTML = '';
-        for (let b = 0; b < QUORDLE_BOARDS; b++) {
+        for (let b = 0; b < quordle.boards; b++) {
             const li = document.createElement('li');
             const solved = quordle.solved[b];
             li.className = `quordle-answer ${solved ? 'solved' : 'missed'}`;
@@ -2186,9 +2244,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quordle: home CTA starts a run; the result panel offers Play Again + Home. The header
     // Back button and Home both return to the home screen and tear down the run.
     const quordleBtn = document.getElementById('quordle-challenge-btn');
-    if (quordleBtn) quordleBtn.addEventListener('click', startQuordle);
+    if (quordleBtn) quordleBtn.addEventListener('click', () => startQuordle(loadQuordleSel()));
     const quordleAgainBtn = document.getElementById('quordle-again-btn');
-    if (quordleAgainBtn) quordleAgainBtn.addEventListener('click', startQuordle);
+    if (quordleAgainBtn) quordleAgainBtn.addEventListener('click', () => startQuordle(quordle.boards)); // replay same count
+    // Word-count pills (2 / 4 / 8): pick the board count for the next run. updateQuordleButton
+    // re-syncs the active pill + CTA title/sub from the saved selection.
+    document.querySelectorAll('.quordle-words .option-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const n = Number(btn.dataset.quordleBoards);
+            if (!QUORDLE_COUNTS.includes(n)) return;
+            saveQuordleSel(n);
+            updateQuordleButton();
+        });
+    });
     function leaveQuordle() {
         exitQuordleMode();
         document.getElementById('quordle-screen').classList.remove('active');
