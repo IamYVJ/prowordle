@@ -275,6 +275,86 @@ body {
     margin: 0 auto;
 }
 
+/* Daily Challenge CTA */
+.daily-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border: 1px solid var(--accent-primary);
+    background: var(--accent-soft);
+    border-radius: var(--radius);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition-fast), border-color var(--transition-fast),
+                transform 0.06s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.daily-btn:active { transform: scale(0.99); }
+
+.daily-btn-cal { flex-shrink: 0; color: var(--accent-primary); }
+
+.daily-btn-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.daily-btn-title {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+}
+
+.daily-btn-sub {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--text-secondary);
+}
+
+.daily-btn-arrow { flex-shrink: 0; color: var(--accent-primary); }
+
+/* "or build your own" divider */
+.home-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-tertiary);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.home-divider::before,
+.home-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}
+
+/* Daily "come back tomorrow" note in the result panel */
+.daily-note {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    text-align: center;
+    margin: 2px 0 16px;
+}
+
 /* Settings Card */
 .settings-card {
     background: var(--bg-secondary);
@@ -1338,6 +1418,7 @@ body {
         border-color: var(--accent-2);
     }
     .start-btn:hover { background: var(--accent-2); }
+    .daily-btn:hover { background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg-secondary)); border-color: var(--accent-2); }
     .header-btn:hover { border-color: var(--text-primary); }
     .header-btn:disabled:hover { border-color: var(--border-color); }
     .result-btn:hover { border-color: var(--text-primary); }

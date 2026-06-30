@@ -12,6 +12,8 @@ const state = {
     wordLength: 4,
     maxTries: 6,
     difficulty: 'easy',
+    isDaily: false,        // Daily Challenge mode (deterministic word, no Best Plays helper)
+    dailyDate: '',         // YYYY-MM-DD the active daily belongs to
     dictionary: new Set(), // allowed guesses for the current length (O(1) lookup)
     solutions: [],         // common-answer pool for the current length
     revealedLetters: { correct: {}, present: new Set() }
@@ -51,6 +53,7 @@ window.addEventListener('load', () => {
             loadingScreen.style.display = 'none';
             app.style.display = 'block';
             updateStatsPreview();
+            updateDailyButton();
         }, 400);
     }, 1500);
 });
@@ -151,7 +154,7 @@ function setBestPlaysBusy(busy) {
 }
 
 async function showBestPlays() {
-    if (state.gameOver || bestPlaysBusy) return;
+    if (state.gameOver || bestPlaysBusy || state.isDaily) return;
     const content = document.getElementById('suggest-content');
     setBestPlaysBusy(true);
     content.innerHTML = '<div class="suggest-state"><div class="loader-spinner"></div><p>Calculating best plays…</p></div>';
@@ -337,6 +340,7 @@ async function startGame() {
     state.currentRow = 0;
     state.gameOver = false;
     state.won = false;
+    state.isDaily = false;
     state.revealedLetters = { correct: {}, present: new Set() };
 
     // Select random word
@@ -351,6 +355,7 @@ async function startGame() {
     const difficultyNames = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
     document.getElementById('game-config').textContent = 
         `${state.wordLength} Letters • ${state.maxTries} Tries • ${difficultyNames[state.difficulty]}`;
+    setBestPlaysVisible(true);
 
     // Initialize board and keyboard
     initBoard();
@@ -358,6 +363,162 @@ async function startGame() {
 
     // Hide result display
     document.getElementById('result-display').style.display = 'none';
+}
+
+// ===========================================================================
+// Daily Challenge
+// ===========================================================================
+// One shared word per calendar day, picked deterministically from the date so
+// everyone playing on the same day gets the same puzzle (no server needed). Fixed
+// 5-letter / 6-try / common-answer config. Progress is saved per day so the game can
+// be resumed across refreshes and is locked once finished. The Best Plays helper is
+// intentionally hidden in this mode.
+const DAILY_LENGTH = 5;
+const DAILY_TRIES = 6;
+const DAILY_KEY = 'wordleProDaily';
+
+// Local calendar date as YYYY-MM-DD (the daily rolls over at the player's own midnight).
+function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Deterministic FNV-1a string hash -> unsigned 32-bit. The same date always maps to the
+// same word, while adjacent dates scatter to unrelated words.
+function hashString(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+function pickDailyWord(answers, dateKey) {
+    if (!answers || !answers.length) return '';
+    return answers[hashString(`wordlepro-daily-${dateKey}`) % answers.length];
+}
+
+function loadDailyProgress() {
+    try { return JSON.parse(localStorage.getItem(DAILY_KEY)); }
+    catch (e) { return null; }
+}
+
+// Persist today's guesses + status so the daily survives a refresh and stays locked once
+// finished. Stores only the player's own guesses — never the solution.
+function saveDailyProgress() {
+    const status = state.won ? 'won' : (state.gameOver ? 'lost' : 'in-progress');
+    try {
+        localStorage.setItem(DAILY_KEY, JSON.stringify({
+            date: state.dailyDate,
+            guesses: state.guesses,
+            status,
+        }));
+    } catch (e) { /* storage unavailable — progress just won't persist */ }
+}
+
+// Re-apply already-made guesses to the board WITHOUT animation, advancing state exactly as
+// submitGuess would (minus stats/animation), so a saved daily can be resumed or shown
+// finished. Does NOT touch stats — those were already recorded when the guesses were live.
+function replayGuesses(savedGuesses) {
+    for (const g of savedGuesses) {
+        if (!g || g.length !== state.wordLength) continue;
+        state.currentGuess = g;
+        state.guesses.push(g);
+        revealRow(false);
+        updateKeyboard();
+        if (g === state.solution) { state.won = true; state.gameOver = true; break; }
+        if (state.currentRow === state.maxTries - 1) { state.gameOver = true; break; }
+        state.currentRow++;
+        state.currentGuess = '';
+    }
+}
+
+// Show/hide the Best Plays helper button (hidden during the Daily Challenge).
+function setBestPlaysVisible(visible) {
+    const btn = document.getElementById('best-plays-btn');
+    if (btn) btn.style.display = visible ? '' : 'none';
+}
+
+// Refresh the home-screen Daily button's sub-label with today's state.
+function updateDailyButton() {
+    const sub = document.getElementById('daily-btn-sub');
+    if (!sub) return;
+    const today = todayKey();
+    const dateLabel = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const saved = loadDailyProgress();
+    if (saved && saved.date === today && (saved.status === 'won' || saved.status === 'lost')) {
+        sub.textContent = saved.status === 'won' ? 'Solved today — back tomorrow' : 'Played today — back tomorrow';
+    } else if (saved && saved.date === today && saved.guesses && saved.guesses.length) {
+        sub.textContent = `Resume today's word • ${dateLabel}`;
+    } else {
+        sub.textContent = `Today's word • ${dateLabel}`;
+    }
+}
+
+let startingDaily = false;
+async function startDailyChallenge() {
+    if (startingDaily) return;
+    startingDaily = true;
+    setLoadError(null);
+
+    // Briefly reflect loading in the button's sub-label, then restore it.
+    const sub = document.getElementById('daily-btn-sub');
+    const originalSub = sub ? sub.textContent : '';
+    if (sub) sub.textContent = 'Loading…';
+
+    let words;
+    try {
+        words = await loadWords(DAILY_LENGTH);
+    } catch (err) {
+        console.error(err);
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        setLoadError(offline
+            ? 'You appear to be offline. Reconnect, then try again.'
+            : "Couldn't load the daily word. Check your connection and try again.");
+        return;
+    } finally {
+        if (sub) sub.textContent = originalSub;
+        startingDaily = false;
+    }
+
+    // Fixed daily config.
+    state.wordLength = DAILY_LENGTH;
+    state.maxTries = DAILY_TRIES;
+    state.difficulty = 'easy';
+    state.dictionary = words.guesses;
+    state.solutions = words.answers;
+
+    // Reset per-game state.
+    state.guesses = [];
+    state.currentGuess = '';
+    state.currentRow = 0;
+    state.gameOver = false;
+    state.won = false;
+    state.isDaily = true;
+    state.revealedLetters = { correct: {}, present: new Set() };
+
+    // Deterministic word for today.
+    state.dailyDate = todayKey();
+    state.solution = pickDailyWord(words.answers, state.dailyDate);
+    if (DEBUG) console.log('Daily solution:', state.solution);
+
+    // Switch to the game screen.
+    document.getElementById('home-screen').classList.remove('active');
+    document.getElementById('game-screen').classList.add('active');
+    document.getElementById('game-config').textContent = `Daily Challenge • ${state.wordLength} Letters`;
+    setBestPlaysVisible(false); // no helper in the daily
+
+    initBoard();
+    initKeyboard();
+    document.getElementById('result-display').style.display = 'none';
+
+    // Resume today's saved progress, if any.
+    const saved = loadDailyProgress();
+    if (saved && saved.date === state.dailyDate && Array.isArray(saved.guesses) && saved.guesses.length) {
+        replayGuesses(saved.guesses);
+        if (state.gameOver) showResult(); // already finished today -> show the locked result
+    }
 }
 
 // Initialize Game Board
@@ -493,6 +654,8 @@ function submitGuess() {
         state.currentRow++;
         state.currentGuess = '';
     }
+
+    if (state.isDaily) saveDailyProgress();
 }
 
 // Validate Hard Mode
@@ -520,7 +683,8 @@ function validateHardMode() {
 }
 
 // Reveal Row with Animation
-function revealRow() {
+// animate=false paints the row instantly (no flip) — used to rebuild a saved Daily board.
+function revealRow(animate = true) {
     const tiles = document.querySelectorAll('.tile');
     const startIndex = state.currentRow * state.wordLength;
     const guess = state.currentGuess;
@@ -538,8 +702,15 @@ function revealRow() {
     // Apply flip animations, coloring each tile by its code.
     for (let i = 0; i < state.wordLength; i++) {
         const cls = CLASS[pattern[i]];
+        const tile = tiles[startIndex + i];
+        if (!animate) {
+            // Instant paint (replay): this row was never typed, so set its text too.
+            tile.textContent = guess[i].toUpperCase();
+            tile.classList.add('filled', cls);
+            tile.setAttribute('aria-label', `${guess[i].toUpperCase()} ${cls}`);
+            continue;
+        }
         setTimeout(() => {
-            const tile = tiles[startIndex + i];
             tile.classList.add('flip');
             setTimeout(() => {
                 tile.classList.add(cls);
@@ -645,6 +816,27 @@ function showResult() {
             <div class="stat-label">Streak</div>
         </div>
     `;
+
+    // Daily Challenge: you can't replay today, so swap "Play Again" for a come-back note.
+    const playAgainBtn = document.getElementById('play-again-btn');
+    let dailyNote = document.getElementById('daily-note');
+    if (state.isDaily) {
+        if (playAgainBtn) playAgainBtn.style.display = 'none';
+        if (!dailyNote) {
+            dailyNote = document.createElement('p');
+            dailyNote.id = 'daily-note';
+            dailyNote.className = 'daily-note';
+            const actions = document.querySelector('.result-actions');
+            if (actions && actions.parentElement) actions.parentElement.insertBefore(dailyNote, actions);
+        }
+        if (dailyNote) {
+            dailyNote.textContent = 'Come back tomorrow for a new word.';
+            dailyNote.style.display = '';
+        }
+    } else {
+        if (playAgainBtn) playAgainBtn.style.display = '';
+        if (dailyNote) dailyNote.style.display = 'none';
+    }
 
     resultDisplay.style.display = 'block';
 
@@ -795,6 +987,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('game-screen').classList.remove('active');
         document.getElementById('home-screen').classList.add('active');
         updateStatsPreview();
+        updateDailyButton();
     });
 
     // Theme toggle (game header + home screen share one handler)
@@ -826,6 +1019,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('.modal-backdrop').addEventListener('click', () => {
         document.getElementById('analysis-modal').classList.remove('active');
     });
+
+    // Daily Challenge
+    const dailyBtn = document.getElementById('daily-challenge-btn');
+    if (dailyBtn) dailyBtn.addEventListener('click', startDailyChallenge);
 
     // Best plays (optimal-play suggester)
     document.getElementById('best-plays-btn').addEventListener('click', showBestPlays);
