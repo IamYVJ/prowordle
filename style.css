@@ -901,8 +901,9 @@ body {
 }
 
 /* shakeRow() adds .shake to the board (tiles are direct grid children, so their
-   shared parent is .game-board). Animate that. */
+   shared parent is .game-board). Animate that. Quordle shakes every unsolved board. */
 .game-board.shake,
+.quordle-board.shake,
 .row.shake {
     animation: shake 0.5s ease-in-out;
 }
@@ -1281,6 +1282,146 @@ body {
     0%   { transform: scale(0.4); opacity: 0; }
     45%  { transform: scale(1.1); opacity: 1; }
     100% { transform: scale(1); opacity: 1; }
+}
+
+/* ============================================================
+   Quordle mode: four boards solved in parallel, one keyboard.
+   Reuses .tile (colours, .flip, .filled) and .key (merged keyboard
+   colouring) from the standard game; only layout/sizing is new.
+   ============================================================ */
+
+/* Home CTA: transparent like Blitz so only Daily carries the accent fill. */
+.quordle-btn { background: transparent; }
+
+/* Wider than .game-main to fit a 2x2 grid of boards; content is tall so the
+   ACTIVE screen scrolls naturally (only inactive screens are clipped). */
+.quordle-main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 16px 16px max(12px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: calc(100vh - 69px);
+}
+
+.quordle-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+    margin: 4px auto 0;
+}
+
+.quordle-board {
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 5), 1fr);
+    gap: 4px;
+    width: 100%;
+    align-content: start;
+}
+
+/* Smaller tiles than the single-board game: four boards share the width. */
+.quordle-board .tile {
+    border-width: 2px;
+    border-radius: 5px;
+    font-size: clamp(0.7rem, 3.2vmin, 1.2rem);
+}
+
+/* A board that's been solved fades back so attention goes to the unsolved ones. */
+.quordle-board.solved { opacity: 0.5; }
+
+/* Run summary */
+.quordle-result .result-actions.is-quordle { grid-template-columns: 1fr; }
+
+.quordle-result-summary {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.quordle-best-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.quordle-best-label {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.quordle-best-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--on-correct);
+    background: var(--correct);
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+}
+
+/* The four answers, marked solved (with the guess number) or missed. */
+.quordle-answers {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 18px 0 4px;
+    padding: 0;
+}
+
+.quordle-answer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+}
+
+.quordle-answer-word {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+
+.quordle-answer-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+}
+
+.quordle-answer.solved .quordle-answer-tag {
+    color: var(--on-correct);
+    background: var(--correct);
+}
+
+.quordle-answer.missed .quordle-answer-tag {
+    color: var(--on-absent);
+    background: var(--absent);
+}
+
+.quordle-answer.missed .quordle-answer-word { color: var(--text-secondary); }
+
+@media (max-width: 480px) {
+    .quordle-main { padding: 12px 10px max(10px, env(safe-area-inset-bottom)); }
+    .quordle-grid { gap: 7px; }
+    .quordle-board { gap: 3px; }
+    .quordle-answers { grid-template-columns: 1fr; }
 }
 
 /* Keyboard */
