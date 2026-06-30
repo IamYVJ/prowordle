@@ -259,6 +259,7 @@ const DIFFICULTY_DESCRIPTIONS = {
     hard: 'Rare words allowed — plus you must reuse every hint'
 };
 const SETTINGS_KEY = 'wordleProSettings';
+const HOME_TAB_KEY = 'wordleProHomeTab'; // which home category tab (wordle / multi) was last open
 
 // Read the saved length/tries/difficulty, validated against the allowed ranges so a
 // stale or tampered value can never start a broken game. Returns null when absent/invalid.
@@ -368,6 +369,40 @@ function setupHomeScreen() {
     // Retry button inside the word-list load-error banner (re-attempts the start).
     const retryLoadBtn = document.getElementById('retry-load-btn');
     if (retryLoadBtn) retryLoadBtn.addEventListener('click', () => startGame());
+
+    // Home category tabs (Wordle / Multi-Wordle): swap the two panels, persist the choice,
+    // and support roving-tabindex arrow-key navigation per the ARIA tabs pattern.
+    const homeTabs = [...document.querySelectorAll('.home-tab')];
+    function selectHomeTab(tab, focusTab) {
+        homeTabs.forEach(t => {
+            const on = t.dataset.tab === tab;
+            t.classList.toggle('active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            t.tabIndex = on ? 0 : -1;
+            if (on && focusTab) t.focus();
+        });
+        document.querySelectorAll('.home-group').forEach(g => {
+            g.hidden = g.dataset.group !== tab;
+        });
+        try { localStorage.setItem(HOME_TAB_KEY, tab); } catch (e) { /* storage unavailable */ }
+    }
+    homeTabs.forEach((t, i) => {
+        t.addEventListener('click', () => selectHomeTab(t.dataset.tab));
+        t.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const dir = e.key === 'ArrowRight' ? 1 : -1;
+            const next = homeTabs[(i + dir + homeTabs.length) % homeTabs.length];
+            selectHomeTab(next.dataset.tab, true);
+        });
+    });
+    // Restore the last-used tab (default: Wordle).
+    let savedTab = 'wordle';
+    try {
+        const t = localStorage.getItem(HOME_TAB_KEY);
+        if (t === 'wordle' || t === 'multi') savedTab = t;
+    } catch (e) { /* ignore */ }
+    selectHomeTab(savedTab);
 }
 
 // Stats Preview

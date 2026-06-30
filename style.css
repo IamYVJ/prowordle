@@ -304,6 +304,54 @@ body {
     margin: 0 auto;
 }
 
+/* Home category tabs (Wordle / Multi-Wordle): a segmented control that swaps the two
+   .home-group panels below it. Active segment mirrors .option-btn.active (accent fill). */
+.home-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 5px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius);
+}
+
+.home-tab {
+    min-height: var(--tap);
+    padding: 11px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast),
+                transform 0.06s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.home-tab.active {
+    background: var(--accent-primary);
+    color: var(--accent-contrast);
+    font-weight: 700;
+}
+
+.home-tab:active { transform: scale(0.98); }
+
+/* Each tab's panel. Same column rhythm as .home-content; the inactive one is [hidden]. */
+.home-group {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.home-group[hidden] { display: none; }
+
 /* Daily Challenge CTA */
 .daily-btn {
     width: 100%;
@@ -2016,6 +2064,7 @@ body {
 /* ── Responsive ── */
 @media (max-width: 480px) {
     .home-content { padding: 64px 14px max(28px, env(safe-area-inset-bottom)); gap: 20px; }
+    .home-group { gap: 20px; }
     .settings-card { padding: 20px 16px; }
     .game-main { padding: 12px 10px max(10px, env(safe-area-inset-bottom)); gap: 10px; }
     .result-answer { font-size: 26px; letter-spacing: 0.12em; }
