@@ -319,6 +319,14 @@ function setLoadError(message) {
     }
 }
 
+// Reset the document scroll so a newly shown screen starts at the top. The page
+// scrolls at the window level and the home screen can be taller than the viewport,
+// so its scroll position would otherwise carry over to the game screen.
+function scrollToTop() {
+    window.scrollTo(0, 0);
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+}
+
 async function startGame() {
     if (startingGame) return; // guard against double-trigger while words load
     startingGame = true;
@@ -366,6 +374,7 @@ async function startGame() {
     // Switch screens
     document.getElementById('home-screen').classList.remove('active');
     document.getElementById('game-screen').classList.add('active');
+    scrollToTop();
 
     // Update game info
     const difficultyNames = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
@@ -522,6 +531,7 @@ async function startDailyChallenge() {
     // Switch to the game screen.
     document.getElementById('home-screen').classList.remove('active');
     document.getElementById('game-screen').classList.add('active');
+    scrollToTop();
     document.getElementById('game-config').textContent = `Daily Challenge • ${state.wordLength} Letters`;
     setBestPlaysVisible(false); // no helper in the daily
 
@@ -836,15 +846,20 @@ function showResult() {
     // Daily Challenge: you can't replay today, so swap "Play Again" for a come-back note.
     const playAgainBtn = document.getElementById('play-again-btn');
     const shareBtn = document.getElementById('share-result-btn');
+    const copyBtn = document.getElementById('copy-result-btn');
+    const actions = document.querySelector('.result-actions');
     let dailyNote = document.getElementById('daily-note');
     if (state.isDaily) {
         if (playAgainBtn) playAgainBtn.style.display = 'none';
-        if (shareBtn) { shareBtn.style.display = ''; resetShareButton(); }
+        if (shareBtn) shareBtn.style.display = '';
+        if (copyBtn) copyBtn.style.display = '';
+        resetActionButton(shareBtn);
+        resetActionButton(copyBtn);
+        if (actions) actions.classList.add('is-daily');
         if (!dailyNote) {
             dailyNote = document.createElement('p');
             dailyNote.id = 'daily-note';
             dailyNote.className = 'daily-note';
-            const actions = document.querySelector('.result-actions');
             if (actions && actions.parentElement) actions.parentElement.insertBefore(dailyNote, actions);
         }
         if (dailyNote) {
@@ -854,6 +869,8 @@ function showResult() {
     } else {
         if (playAgainBtn) playAgainBtn.style.display = '';
         if (shareBtn) shareBtn.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
+        if (actions) actions.classList.remove('is-daily');
         if (dailyNote) dailyNote.style.display = 'none';
     }
 
@@ -866,10 +883,11 @@ function showResult() {
 }
 
 // ── Daily Challenge: share results ──
-// Build the classic emoji grid (🟩🟨⬛) from the player's guesses, with a title and
-// score line. The same text feeds the native share sheet and the clipboard fallback,
-// so both paths produce identical, recognizable output. Patterns come from the shared
-// scorer (computePattern), so the grid always matches the colors shown on the board.
+// Build the classic emoji grid (🟩🟨⬛) from the player's guesses, with a title,
+// score line, and a link back to the game. The same text feeds the native share
+// sheet and the clipboard, so every path produces identical, recognizable output.
+// Patterns come from the shared scorer (computePattern), so the grid always matches
+// the colors shown on the board.
 function buildShareText() {
     const EMOJI = { '2': '🟩', '1': '🟨', '0': '⬛' };
     const dateLabel = state.dailyDate
@@ -879,14 +897,15 @@ function buildShareText() {
     const grid = state.guesses
         .map(g => computePattern(g, state.solution).split('').map(c => EMOJI[c] || '⬛').join(''))
         .join('\n');
-    return `Wordle Pro — Daily${dateLabel ? ' ' + dateLabel : ''}\n${score}\n\n${grid}`;
+    // Current page URL (no query/hash) — resolves to the live site when deployed.
+    const link = location.origin + location.pathname;
+    return `Wordle Pro — Daily${dateLabel ? ' ' + dateLabel : ''}\n${score}\n\n${grid}\n\n${link}`;
 }
 
-// Try the OS share sheet first (the user chooses the destination — nothing is sent
-// automatically); fall back to the clipboard, then to a legacy copy for older browsers.
+// Share button: try the OS share sheet first (the user chooses the destination —
+// nothing is sent automatically); fall back to copying the same text.
 async function shareDailyResult() {
     const text = buildShareText();
-
     if (navigator.share) {
         try {
             await navigator.share({ text });
@@ -896,7 +915,17 @@ async function shareDailyResult() {
             // any other error: fall through to the clipboard
         }
     }
+    copyToClipboard(text, document.getElementById('share-result-btn'));
+}
 
+// Copy button: copy the share text straight to the clipboard (no share sheet).
+function copyDailyResult() {
+    copyToClipboard(buildShareText(), document.getElementById('copy-result-btn'));
+}
+
+// Shared clipboard write with a legacy fallback. Shows "Copied!" feedback on the
+// button that triggered it.
+async function copyToClipboard(text, btn) {
     let copied = false;
     if (navigator.clipboard && navigator.clipboard.writeText) {
         try { await navigator.clipboard.writeText(text); copied = true; }
@@ -904,8 +933,7 @@ async function shareDailyResult() {
     } else {
         copied = legacyCopy(text);
     }
-
-    if (copied) showShareCopied();
+    if (copied) showCopied(btn);
     else showMessage('Could not copy results');
 }
 
@@ -928,25 +956,23 @@ function legacyCopy(text) {
     }
 }
 
-// Briefly swap the button to a "Copied!" success state, then restore it.
-function showShareCopied() {
-    const btn = document.getElementById('share-result-btn');
+// Briefly swap a result-action button to a "Copied!" success state, then restore it.
+function showCopied(btn) {
     if (!btn) { showMessage('Copied results to clipboard'); return; }
-    const label = btn.querySelector('.share-label');
+    const label = btn.querySelector('.btn-label');
     if (label) label.textContent = 'Copied!';
     btn.classList.add('copied');
     clearTimeout(btn._copyTimer);
-    btn._copyTimer = setTimeout(resetShareButton, 1800);
+    btn._copyTimer = setTimeout(() => resetActionButton(btn), 1800);
 }
 
-// Restore the button to its default "Share" label/appearance.
-function resetShareButton() {
-    const btn = document.getElementById('share-result-btn');
+// Restore a result-action button to its default label (from data-label) and style.
+function resetActionButton(btn) {
     if (!btn) return;
     clearTimeout(btn._copyTimer);
     btn.classList.remove('copied');
-    const label = btn.querySelector('.share-label');
-    if (label) label.textContent = 'Share';
+    const label = btn.querySelector('.btn-label');
+    if (label && btn.dataset.label) label.textContent = btn.dataset.label;
 }
 
 // Statistics
@@ -1089,6 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('back-btn').addEventListener('click', () => {
         document.getElementById('game-screen').classList.remove('active');
         document.getElementById('home-screen').classList.add('active');
+        scrollToTop();
         updateStatsPreview();
         updateDailyButton();
     });
@@ -1114,9 +1141,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('analysis-modal').classList.add('active');
     });
 
-    // Share results (Daily Challenge)
+    // Share / Copy results (Daily Challenge)
     const shareBtn = document.getElementById('share-result-btn');
     if (shareBtn) shareBtn.addEventListener('click', shareDailyResult);
+    const copyBtn = document.getElementById('copy-result-btn');
+    if (copyBtn) copyBtn.addEventListener('click', copyDailyResult);
 
     // Modal close
     document.querySelector('.modal-close').addEventListener('click', () => {

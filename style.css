@@ -968,8 +968,11 @@ body {
     background: var(--surface-2);
 }
 
-/* Share (Daily Challenge): accent-styled, sits beside "View Analysis" since
-   "Play Again" is hidden in daily mode. Auto grid placement (no full-width span). */
+/* Daily Challenge result actions: [Share][Copy] on the top row, "View Analysis"
+   full-width below (Play Again is hidden in daily mode). */
+.result-actions.is-daily #view-analysis-btn { grid-column: 1 / -1; }
+
+/* Share: accent-styled primary action; Copy keeps the secondary look. */
 .result-btn.share-btn {
     background: var(--accent-primary);
     border-color: var(--accent-primary);
@@ -977,8 +980,8 @@ body {
     font-weight: 700;
 }
 
-/* Brief success state after the grid is copied to the clipboard. */
-.result-btn.share-btn.copied {
+/* Brief success state after the text is copied to the clipboard (Share or Copy). */
+.result-btn.copied {
     background: var(--correct);
     border-color: var(--correct);
     color: var(--on-correct);
@@ -1440,7 +1443,7 @@ body {
     .result-btn:hover { border-color: var(--text-primary); }
     .result-btn.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
     .result-btn.share-btn:hover { background: var(--accent-2); border-color: var(--accent-2); }
-    .result-btn.share-btn.copied:hover { background: var(--correct); border-color: var(--correct); }
+    .result-btn.copied:hover { background: var(--correct); border-color: var(--correct); }
     .key:hover { background: color-mix(in srgb, var(--key-bg) 80%, var(--text-primary)); }
     .modal-close:hover { border-color: var(--text-primary); }
     .suggest-item:hover { border-color: var(--accent-primary); }
