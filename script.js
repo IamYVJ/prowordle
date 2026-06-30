@@ -819,9 +819,11 @@ function showResult() {
 
     // Daily Challenge: you can't replay today, so swap "Play Again" for a come-back note.
     const playAgainBtn = document.getElementById('play-again-btn');
+    const shareBtn = document.getElementById('share-result-btn');
     let dailyNote = document.getElementById('daily-note');
     if (state.isDaily) {
         if (playAgainBtn) playAgainBtn.style.display = 'none';
+        if (shareBtn) { shareBtn.style.display = ''; resetShareButton(); }
         if (!dailyNote) {
             dailyNote = document.createElement('p');
             dailyNote.id = 'daily-note';
@@ -835,6 +837,7 @@ function showResult() {
         }
     } else {
         if (playAgainBtn) playAgainBtn.style.display = '';
+        if (shareBtn) shareBtn.style.display = 'none';
         if (dailyNote) dailyNote.style.display = 'none';
     }
 
@@ -844,6 +847,90 @@ function showResult() {
     setTimeout(() => {
         resultDisplay.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
+}
+
+// ── Daily Challenge: share results ──
+// Build the classic emoji grid (🟩🟨⬛) from the player's guesses, with a title and
+// score line. The same text feeds the native share sheet and the clipboard fallback,
+// so both paths produce identical, recognizable output. Patterns come from the shared
+// scorer (computePattern), so the grid always matches the colors shown on the board.
+function buildShareText() {
+    const EMOJI = { '2': '🟩', '1': '🟨', '0': '⬛' };
+    const dateLabel = state.dailyDate
+        ? new Date(state.dailyDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
+    const score = state.won ? `${state.guesses.length}/${state.maxTries}` : `X/${state.maxTries}`;
+    const grid = state.guesses
+        .map(g => computePattern(g, state.solution).split('').map(c => EMOJI[c] || '⬛').join(''))
+        .join('\n');
+    return `Wordle Pro — Daily${dateLabel ? ' ' + dateLabel : ''}\n${score}\n\n${grid}`;
+}
+
+// Try the OS share sheet first (the user chooses the destination — nothing is sent
+// automatically); fall back to the clipboard, then to a legacy copy for older browsers.
+async function shareDailyResult() {
+    const text = buildShareText();
+
+    if (navigator.share) {
+        try {
+            await navigator.share({ text });
+            return; // the share sheet handled it
+        } catch (err) {
+            if (err && err.name === 'AbortError') return; // user dismissed the sheet
+            // any other error: fall through to the clipboard
+        }
+    }
+
+    let copied = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        try { await navigator.clipboard.writeText(text); copied = true; }
+        catch (err) { copied = legacyCopy(text); }
+    } else {
+        copied = legacyCopy(text);
+    }
+
+    if (copied) showShareCopied();
+    else showMessage('Could not copy results');
+}
+
+// Clipboard fallback for browsers without the async Clipboard API (or when it's blocked).
+function legacyCopy(text) {
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Briefly swap the button to a "Copied!" success state, then restore it.
+function showShareCopied() {
+    const btn = document.getElementById('share-result-btn');
+    if (!btn) { showMessage('Copied results to clipboard'); return; }
+    const label = btn.querySelector('.share-label');
+    if (label) label.textContent = 'Copied!';
+    btn.classList.add('copied');
+    clearTimeout(btn._copyTimer);
+    btn._copyTimer = setTimeout(resetShareButton, 1800);
+}
+
+// Restore the button to its default "Share" label/appearance.
+function resetShareButton() {
+    const btn = document.getElementById('share-result-btn');
+    if (!btn) return;
+    clearTimeout(btn._copyTimer);
+    btn.classList.remove('copied');
+    const label = btn.querySelector('.share-label');
+    if (label) label.textContent = 'Share';
 }
 
 // Statistics
@@ -1010,6 +1097,10 @@ document.addEventListener('DOMContentLoaded', () => {
         displayAnalysis();
         document.getElementById('analysis-modal').classList.add('active');
     });
+
+    // Share results (Daily Challenge)
+    const shareBtn = document.getElementById('share-result-btn');
+    if (shareBtn) shareBtn.addEventListener('click', shareDailyResult);
 
     // Modal close
     document.querySelector('.modal-close').addEventListener('click', () => {

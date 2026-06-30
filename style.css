@@ -968,6 +968,22 @@ body {
     background: var(--surface-2);
 }
 
+/* Share (Daily Challenge): accent-styled, sits beside "View Analysis" since
+   "Play Again" is hidden in daily mode. Auto grid placement (no full-width span). */
+.result-btn.share-btn {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: var(--accent-contrast);
+    font-weight: 700;
+}
+
+/* Brief success state after the grid is copied to the clipboard. */
+.result-btn.share-btn.copied {
+    background: var(--correct);
+    border-color: var(--correct);
+    color: var(--on-correct);
+}
+
 /* Keyboard */
 .keyboard {
     width: 100%;
@@ -1423,6 +1439,8 @@ body {
     .header-btn:disabled:hover { border-color: var(--border-color); }
     .result-btn:hover { border-color: var(--text-primary); }
     .result-btn.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+    .result-btn.share-btn:hover { background: var(--accent-2); border-color: var(--accent-2); }
+    .result-btn.share-btn.copied:hover { background: var(--correct); border-color: var(--correct); }
     .key:hover { background: color-mix(in srgb, var(--key-bg) 80%, var(--text-primary)); }
     .modal-close:hover { border-color: var(--text-primary); }
     .suggest-item:hover { border-color: var(--accent-primary); }
