@@ -644,10 +644,16 @@ const BLITZ_SECONDS = 90;
 const BLITZ_KEY = 'wordleProBlitz';
 
 // Timer handle + an input lock. blitzLock is raised during the reveal/advance window between
-// words so a fast typist can't submit a guess on the old board moments before it's replaced.
+// words (and during the start countdown) so a fast typist can't submit a guess on the old
+// board moments before it's replaced — or before the clock has even started.
 let blitzTimerId = null;
 let blitzLock = false;
 let startingBlitz = false;
+
+// Start-of-run "3 · 2 · 1 · Go!" lead-in. Digits show for STEP ms, the "Go!" flash for GO ms.
+const BLITZ_COUNT_STEP = 650;
+const BLITZ_COUNT_GO = 500;
+let blitzCountdownId = null;
 
 function loadBlitzBest() {
     try {
@@ -717,11 +723,56 @@ function stopBlitzTimer() {
 // game isn't frozen by a leftover blitzLock.
 function exitBlitzMode() {
     stopBlitzTimer();
+    clearBlitzCountdown();
     state.isBlitz = false;
     blitzLock = false;
     setBlitzHudVisible(false);
     const panel = document.getElementById('blitz-result');
     if (panel) panel.style.display = 'none';
+}
+
+// Cancel any pending countdown and hide its overlay (used on completion and when leaving).
+function clearBlitzCountdown() {
+    if (blitzCountdownId !== null) { clearTimeout(blitzCountdownId); blitzCountdownId = null; }
+    const overlay = document.getElementById('blitz-countdown');
+    if (overlay) { overlay.style.display = 'none'; overlay.setAttribute('aria-hidden', 'true'); }
+}
+
+// Play a "3 · 2 · 1 · Go!" lead-in, then invoke onDone (which starts the clock). Input stays
+// locked the whole time. Each step re-checks isBlitz so a mid-countdown exit bails cleanly
+// rather than starting the clock after the player has already left the run.
+function runBlitzCountdown(onDone) {
+    clearBlitzCountdown(); // drop any stale countdown before starting a fresh one
+    const overlay = document.getElementById('blitz-countdown');
+    const numEl = document.getElementById('blitz-countdown-num');
+    const steps = ['3', '2', '1', 'Go!'];
+    blitzLock = true; // no typing until the clock actually starts
+    announce('Get ready');
+    if (overlay) { overlay.style.display = 'flex'; overlay.setAttribute('aria-hidden', 'false'); }
+
+    let i = 0;
+    const tick = () => {
+        if (!state.isBlitz) { clearBlitzCountdown(); return; } // player left mid-countdown
+        if (i >= steps.length) {
+            clearBlitzCountdown();
+            blitzLock = false;
+            onDone();
+            return;
+        }
+        const label = steps[i];
+        const isGo = label === 'Go!';
+        if (numEl) {
+            numEl.textContent = label;
+            numEl.classList.toggle('go', isGo);
+            numEl.classList.remove('pop');
+            void numEl.offsetWidth; // reflow so the pop animation restarts each step
+            numEl.classList.add('pop');
+        }
+        if (isGo) announce('Go!');
+        i++;
+        blitzCountdownId = setTimeout(tick, isGo ? BLITZ_COUNT_GO : BLITZ_COUNT_STEP);
+    };
+    tick();
 }
 
 async function startBlitz() {
@@ -775,12 +826,18 @@ async function startBlitz() {
     const panel = document.getElementById('blitz-result');
     if (panel) panel.style.display = 'none';
 
-    // First word + HUD, then start the clock.
+    // First word + HUD, then a "3 · 2 · 1 · Go!" lead-in before the clock starts.
     nextBlitzWord();
     updateBlitzHud();
     setBlitzHudVisible(true);
-    state.blitzEndTime = Date.now() + BLITZ_SECONDS * 1000;
-    startBlitzTimer();
+    // Freeze the HUD clock at the full duration while the lead-in plays.
+    const timeEl = document.getElementById('blitz-time');
+    if (timeEl) { timeEl.textContent = formatTime(BLITZ_SECONDS * 1000); timeEl.classList.remove('is-low'); }
+    runBlitzCountdown(() => {
+        if (!state.isBlitz) return; // guard: player may have left just as the countdown ended
+        state.blitzEndTime = Date.now() + BLITZ_SECONDS * 1000;
+        startBlitzTimer();
+    });
 }
 
 // Load the next Blitz word onto a fresh board. Picks a not-yet-seen answer (clearing the

@@ -787,6 +787,7 @@ body {
     flex-direction: column;
     gap: 12px;
     min-height: calc(100vh - 66px);
+    position: relative; /* positioning context for the Blitz countdown overlay */
 }
 
 /* Message Container */
@@ -1229,6 +1230,44 @@ body {
     background: var(--correct);
     padding: 3px 9px;
     border-radius: var(--radius-pill);
+}
+
+/* "3 · 2 · 1 · Go!" lead-in overlay. Scoped to .game-main (which is position:relative) so it
+   veils the play area but leaves the header — and the Back button — reachable. */
+.blitz-countdown {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 8, 10, 0.72);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    border-radius: var(--radius);
+}
+
+.blitz-countdown-num {
+    font-family: var(--serif);
+    font-size: clamp(5rem, 30vw, 11rem);
+    line-height: 1;
+    color: #fff;
+    text-shadow: 0 6px 32px rgba(0, 0, 0, 0.45);
+}
+
+.blitz-countdown-num.go {
+    color: var(--correct);
+    font-style: italic;
+}
+
+/* Pop each value in as it changes (no-op under prefers-reduced-motion: the global rule
+   collapses the duration, leaving the number at its final, visible frame). */
+.blitz-countdown-num.pop { animation: blitz-count-pop 0.45s ease; }
+
+@keyframes blitz-count-pop {
+    0%   { transform: scale(0.4); opacity: 0; }
+    45%  { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
 }
 
 /* Keyboard */
