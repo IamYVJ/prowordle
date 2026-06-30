@@ -14,6 +14,7 @@ const state = {
     difficulty: 'easy',
     isDaily: false,        // Daily Challenge mode (deterministic word, no Best Plays helper)
     isChallenge: false,    // launched from a "Challenge a friend" link (fixed word + config)
+    isBlitz: false,        // Blitz / Time Attack mode (timed; solve as many words as possible)
     dailyDate: '',         // YYYY-MM-DD the active daily belongs to
     dictionary: new Set(), // allowed guesses for the current length (O(1) lookup)
     solutions: [],         // common-answer pool for the current length
@@ -65,6 +66,7 @@ window.addEventListener('load', () => {
             app.style.display = 'block';
             updateStatsPreview();
             updateDailyButton();
+            updateBlitzButton();
         }, 400);
     }, 1500);
 });
@@ -444,6 +446,7 @@ async function startGame(challengeWord = null) {
     state.isDaily = false;
     state.isChallenge = !!challengeWord;
     state.revealedLetters = { correct: {}, present: new Set() };
+    exitBlitzMode(); // clear any in-progress Blitz run (timer/HUD/lock) when starting a normal game
 
     // A challenge link fixes the word; otherwise pick randomly from the difficulty's pool.
     state.solution = challengeWord || state.solutions[Math.floor(Math.random() * state.solutions.length)];
@@ -602,6 +605,7 @@ async function startDailyChallenge() {
     state.isDaily = true;
     state.isChallenge = false;
     state.revealedLetters = { correct: {}, present: new Set() };
+    exitBlitzMode(); // clear any in-progress Blitz run (timer/HUD/lock) when starting the daily
 
     // Deterministic word for today.
     state.dailyDate = todayKey();
@@ -625,6 +629,253 @@ async function startDailyChallenge() {
         replayGuesses(saved.guesses);
         if (state.gameOver) showResult(); // already finished today -> show the locked result
     }
+}
+
+// ===========================================================================
+// Blitz / Time Attack
+// ===========================================================================
+// A timed sprint on fixed 5-letter / 6-try / common-answer puzzles: instead of one word you
+// solve as many as you can before the clock runs out. Solving a word (or using up all 6 tries)
+// immediately rolls a fresh word onto the same board. Score = words solved. Only the personal
+// best is persisted — Blitz never touches the normal win/streak stats. No Best Plays helper.
+const BLITZ_LENGTH = 5;
+const BLITZ_TRIES = 6;
+const BLITZ_SECONDS = 90;
+const BLITZ_KEY = 'wordleProBlitz';
+
+// Timer handle + an input lock. blitzLock is raised during the reveal/advance window between
+// words so a fast typist can't submit a guess on the old board moments before it's replaced.
+let blitzTimerId = null;
+let blitzLock = false;
+let startingBlitz = false;
+
+function loadBlitzBest() {
+    try {
+        const b = JSON.parse(localStorage.getItem(BLITZ_KEY));
+        return (b && typeof b.best === 'number' && b.best >= 0) ? b.best : 0;
+    } catch (e) { return 0; }
+}
+
+function saveBlitzBest(score) {
+    try { localStorage.setItem(BLITZ_KEY, JSON.stringify({ best: score })); }
+    catch (e) { /* storage unavailable — best just won't persist */ }
+}
+
+// Refresh the home-screen Blitz button's sub-label with the saved best.
+function updateBlitzButton() {
+    const sub = document.getElementById('blitz-btn-sub');
+    if (!sub) return;
+    const best = loadBlitzBest();
+    sub.textContent = best > 0
+        ? `${BLITZ_SECONDS}s sprint • Best ${best}`
+        : `Solve as many as you can in ${BLITZ_SECONDS}s`;
+}
+
+// Format milliseconds as M:SS for the HUD clock (ceil so the last second still reads "0:01").
+function formatTime(ms) {
+    const total = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// Show/hide the Blitz HUD (and mirror that in aria-hidden).
+function setBlitzHudVisible(visible) {
+    const hud = document.getElementById('blitz-hud');
+    if (!hud) return;
+    hud.style.display = visible ? '' : 'none';
+    hud.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function updateBlitzHud() {
+    const scoreEl = document.getElementById('blitz-score');
+    if (scoreEl) scoreEl.textContent = state.blitzScore;
+}
+
+// Recompute the remaining time from the fixed end-timestamp (so background-tab throttling
+// can't make the clock drift) and end the run when it hits zero.
+function updateBlitzTimer() {
+    const remaining = Math.max(0, state.blitzEndTime - Date.now());
+    const timeEl = document.getElementById('blitz-time');
+    if (timeEl) {
+        timeEl.textContent = formatTime(remaining);
+        timeEl.classList.toggle('is-low', remaining <= 10000 && remaining > 0);
+    }
+    if (remaining <= 0) endBlitz();
+}
+
+function startBlitzTimer() {
+    stopBlitzTimer();
+    updateBlitzTimer();                       // paint immediately (no stale first tick)
+    blitzTimerId = setInterval(updateBlitzTimer, 250);
+}
+
+function stopBlitzTimer() {
+    if (blitzTimerId !== null) { clearInterval(blitzTimerId); blitzTimerId = null; }
+}
+
+// Tear down an in-progress Blitz run when leaving the mode (starting another game, the daily,
+// or returning home): stop the clock, hide Blitz UI, and clear the input lock so the next
+// game isn't frozen by a leftover blitzLock.
+function exitBlitzMode() {
+    stopBlitzTimer();
+    state.isBlitz = false;
+    blitzLock = false;
+    setBlitzHudVisible(false);
+    const panel = document.getElementById('blitz-result');
+    if (panel) panel.style.display = 'none';
+}
+
+async function startBlitz() {
+    if (startingBlitz) return;
+    startingBlitz = true;
+    setLoadError(null);
+
+    // Briefly reflect loading in the button's sub-label, then restore it.
+    const sub = document.getElementById('blitz-btn-sub');
+    const originalSub = sub ? sub.textContent : '';
+    if (sub) sub.textContent = 'Loading…';
+
+    let words;
+    try {
+        words = await loadWords(BLITZ_LENGTH);
+    } catch (err) {
+        console.error(err);
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        setLoadError(offline
+            ? 'You appear to be offline. Reconnect, then try again.'
+            : "Couldn't load the word list. Check your connection and try again.");
+        return;
+    } finally {
+        if (sub) sub.textContent = originalSub;
+        startingBlitz = false;
+    }
+
+    // Fixed Blitz config.
+    state.wordLength = BLITZ_LENGTH;
+    state.maxTries = BLITZ_TRIES;
+    state.difficulty = 'easy';
+    state.dictionary = words.guesses;
+    state.solutions = words.answers;
+
+    // Mode flags + run state. gameOver stays false for the whole run (only endBlitz sets it).
+    state.isDaily = false;
+    state.isChallenge = false;
+    state.isBlitz = true;
+    state.gameOver = false;
+    state.blitzScore = 0;
+    state.blitzUsed = new Set();
+    blitzLock = false;
+
+    // Switch to the game screen.
+    document.getElementById('home-screen').classList.remove('active');
+    document.getElementById('game-screen').classList.add('active');
+    scrollToTop();
+    document.getElementById('game-config').textContent = `Blitz • ${BLITZ_SECONDS}s`;
+    setBestPlaysVisible(false); // no helper in Blitz
+    document.getElementById('result-display').style.display = 'none';
+    const panel = document.getElementById('blitz-result');
+    if (panel) panel.style.display = 'none';
+
+    // First word + HUD, then start the clock.
+    nextBlitzWord();
+    updateBlitzHud();
+    setBlitzHudVisible(true);
+    state.blitzEndTime = Date.now() + BLITZ_SECONDS * 1000;
+    startBlitzTimer();
+}
+
+// Load the next Blitz word onto a fresh board. Picks a not-yet-seen answer (clearing the
+// used-set once the pool is exhausted) so words don't repeat within a run until they must.
+function nextBlitzWord() {
+    const pool = state.solutions;
+    if (!pool || !pool.length) return;
+    if (state.blitzUsed.size >= pool.length) state.blitzUsed = new Set();
+    let word;
+    do {
+        word = pool[Math.floor(Math.random() * pool.length)];
+    } while (state.blitzUsed.has(word) && state.blitzUsed.size < pool.length);
+    state.blitzUsed.add(word);
+    state.solution = word;
+    if (DEBUG) console.log('Blitz solution:', state.solution);
+
+    // Reset the per-word board state (mode flags + score + timer persist across words).
+    state.guesses = [];
+    state.currentGuess = '';
+    state.currentRow = 0;
+    state.won = false;
+    state.revealedLetters = { correct: {}, present: new Set() };
+
+    initBoard();
+    initKeyboard();
+    blitzLock = false;
+}
+
+// Blitz guess outcome. A solved or exhausted word doesn't end the game — it advances to a
+// fresh word after the reveal animation. The run ends only when the timer expires (endBlitz).
+function handleBlitzGuess(solved) {
+    const revealMs = state.wordLength * 300 + 350; // last tile colors at (n-1)*300 + 300
+    if (solved) {
+        state.blitzScore++;
+        updateBlitzHud();
+        showMessage('Correct! +1', 900);
+        blitzLock = true;
+        scheduleBlitzAdvance(revealMs);
+    } else if (state.currentRow === state.maxTries - 1) {
+        // Out of tries on this word: flash the answer, then move on (no score).
+        showMessage(`Answer: ${state.solution.toUpperCase()}`, 1400);
+        blitzLock = true;
+        scheduleBlitzAdvance(revealMs + 250);
+    } else {
+        // Keep going on the same word.
+        state.currentRow++;
+        state.currentGuess = '';
+    }
+}
+
+// Advance to the next word after the reveal finishes, unless the run ended (timer expired) in
+// the meantime — the guard stops a queued advance from resurrecting the board under the result.
+function scheduleBlitzAdvance(delay) {
+    setTimeout(() => {
+        if (!state.isBlitz || state.gameOver) return;
+        nextBlitzWord();
+    }, delay);
+}
+
+// End the Blitz run when the clock hits zero. Locks the board, records a new best if beaten,
+// and shows the run summary. Only ever called by the timer (never per word).
+function endBlitz() {
+    if (state.gameOver) return; // guard against a double-fire from the interval
+    stopBlitzTimer();
+    state.gameOver = true;
+    blitzLock = true;
+
+    const score = state.blitzScore;
+    const prevBest = loadBlitzBest();
+    const isNewBest = score > prevBest;
+    if (isNewBest) saveBlitzBest(score);
+
+    announce(`Time's up. You solved ${score} ${score === 1 ? 'word' : 'words'}.`);
+    setBlitzHudVisible(false);
+    showBlitzResult(score, Math.max(score, prevBest), isNewBest);
+}
+
+// Render the Blitz run summary (parallel to showResult, but score-based with its own actions).
+function showBlitzResult(score, best, isNewBest) {
+    const panel = document.getElementById('blitz-result');
+    if (!panel) return;
+    const icon = document.getElementById('blitz-result-icon');
+    const title = document.getElementById('blitz-result-title');
+    const finalEl = document.getElementById('blitz-final-score');
+    const bestEl = document.getElementById('blitz-best-score');
+    const badge = document.getElementById('blitz-best-badge');
+
+    if (icon) icon.textContent = isNewBest ? '🏆' : '🔥';
+    if (title) title.textContent = isNewBest ? 'New best!' : "Time's up!";
+    if (finalEl) finalEl.textContent = score;
+    if (bestEl) bestEl.textContent = best;
+    if (badge) badge.style.display = isNewBest ? '' : 'none';
+
+    panel.style.display = 'block';
+    setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
 }
 
 // Initialize Game Board
@@ -676,6 +927,7 @@ function initKeyboard() {
 // Handle Key Input
 function handleKey(key) {
     if (state.gameOver) return;
+    if (blitzLock) return; // Blitz: ignore input during the reveal/advance window between words
 
     if (key === 'ENTER') {
         submitGuess();
@@ -744,6 +996,13 @@ function submitGuess() {
     state.guesses.push(state.currentGuess);
     revealRow();
     updateKeyboard();
+
+    // Blitz runs on its own outcome logic (advance to the next word; the run only ends when
+    // the timer expires), so it branches off before the normal single-word win/loss path.
+    if (state.isBlitz) {
+        handleBlitzGuess(state.currentGuess === state.solution);
+        return;
+    }
 
     if (state.currentGuess === state.solution) {
         state.won = true;
@@ -1331,11 +1590,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Back button
     document.getElementById('back-btn').addEventListener('click', () => {
+        exitBlitzMode(); // stop the clock + hide Blitz UI if a run was in progress
         document.getElementById('game-screen').classList.remove('active');
         document.getElementById('home-screen').classList.add('active');
         scrollToTop();
         updateStatsPreview();
         updateDailyButton();
+        updateBlitzButton();
     });
 
     // Theme toggle (game header + home screen share one handler)
@@ -1410,6 +1671,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Daily Challenge
     const dailyBtn = document.getElementById('daily-challenge-btn');
     if (dailyBtn) dailyBtn.addEventListener('click', startDailyChallenge);
+
+    // Blitz / Time Attack: home CTA starts a run; the result panel offers Play Again + Home.
+    const blitzBtn = document.getElementById('blitz-challenge-btn');
+    if (blitzBtn) blitzBtn.addEventListener('click', startBlitz);
+    const blitzAgainBtn = document.getElementById('blitz-again-btn');
+    if (blitzAgainBtn) blitzAgainBtn.addEventListener('click', startBlitz);
+    const blitzHomeBtn = document.getElementById('blitz-home-btn');
+    if (blitzHomeBtn) blitzHomeBtn.addEventListener('click', () => {
+        exitBlitzMode();
+        document.getElementById('game-screen').classList.remove('active');
+        document.getElementById('home-screen').classList.add('active');
+        scrollToTop();
+        updateStatsPreview();
+        updateDailyButton();
+        updateBlitzButton();
+    });
 
     // Best plays (optimal-play suggester)
     document.getElementById('best-plays-btn').addEventListener('click', showBestPlays);

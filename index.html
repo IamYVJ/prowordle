@@ -58,6 +58,19 @@
                     </svg>
                 </button>
 
+                <button id="blitz-challenge-btn" class="daily-btn blitz-btn" type="button">
+                    <svg class="daily-btn-cal" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+                    </svg>
+                    <span class="daily-btn-text">
+                        <span class="daily-btn-title">Blitz</span>
+                        <span class="daily-btn-sub" id="blitz-btn-sub">Solve as many as you can in 90s</span>
+                    </span>
+                    <svg class="daily-btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+
                 <div class="home-divider"><span>or build your own</span></div>
 
                 <div class="settings-card">
@@ -198,6 +211,19 @@
                 <!-- Visually-hidden live region: narrates each guess result and the outcome to screen readers -->
                 <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
+                <!-- Blitz HUD: live clock + score. aria-hidden because a ticking clock would spam
+                     screen readers; per-guess and end-of-run announcements cover Blitz instead. -->
+                <div id="blitz-hud" class="blitz-hud" style="display: none;" aria-hidden="true">
+                    <div class="blitz-stat">
+                        <span class="blitz-stat-label">Time</span>
+                        <span class="blitz-stat-value" id="blitz-time">1:30</span>
+                    </div>
+                    <div class="blitz-stat">
+                        <span class="blitz-stat-label">Solved</span>
+                        <span class="blitz-stat-value" id="blitz-score">0</span>
+                    </div>
+                </div>
+
                 <div id="game-board" class="game-board"></div>
 
                 <!-- Result Display -->
@@ -246,6 +272,26 @@
                             <button class="result-btn primary" id="play-again-btn">
                                 Play Again
                             </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Blitz run summary (shown when the timer expires) -->
+                <div id="blitz-result" class="result-display blitz-result" style="display: none;">
+                    <div class="result-content">
+                        <div class="result-icon" id="blitz-result-icon">🔥</div>
+                        <h3 class="result-title" id="blitz-result-title">Time's up!</h3>
+                        <div class="blitz-score-display">
+                            <span class="blitz-score-big" id="blitz-final-score">0</span>
+                            <span class="blitz-score-caption">words solved</span>
+                        </div>
+                        <div class="blitz-best-row">
+                            <span class="blitz-best-badge" id="blitz-best-badge" style="display: none;">New best!</span>
+                            <span class="blitz-best-label">Best: <span id="blitz-best-score">0</span></span>
+                        </div>
+                        <div class="result-actions is-blitz">
+                            <button class="result-btn primary" id="blitz-again-btn" type="button">Play Again</button>
+                            <button class="result-btn secondary" id="blitz-home-btn" type="button">Home</button>
                         </div>
                     </div>
                 </div>

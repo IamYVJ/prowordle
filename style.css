@@ -1125,6 +1125,112 @@ body {
     color: var(--on-correct);
 }
 
+/* ── Blitz / Time Attack ── */
+/* Home CTA: same shape as the Daily button, secondary (outline) treatment so the two
+   stacked CTAs read as a pair without competing. Declared after .daily-btn so it wins. */
+.blitz-btn { background: transparent; }
+
+/* Live HUD above the board: a clock + score pair. */
+.blitz-hud {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.blitz-stat {
+    flex: 0 1 132px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+
+.blitz-stat-label {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.blitz-stat-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Final 10 seconds: pull the eye to the clock (red, gentle pulse). */
+.blitz-stat-value.is-low {
+    color: var(--danger);
+    animation: blitz-pulse 1s ease-in-out infinite;
+}
+
+@keyframes blitz-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+}
+
+/* Run summary: stack both actions full-width. */
+.blitz-result .result-actions.is-blitz { grid-template-columns: 1fr; }
+
+.blitz-score-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin-bottom: 16px;
+}
+
+.blitz-score-big {
+    font-family: var(--serif);
+    font-size: 72px;
+    line-height: 1;
+    color: var(--accent-primary);
+}
+
+.blitz-score-caption {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.blitz-best-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.blitz-best-label {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.blitz-best-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--on-correct);
+    background: var(--correct);
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+}
+
 /* Keyboard */
 .keyboard {
     width: 100%;
