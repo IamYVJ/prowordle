@@ -13,6 +13,7 @@ const state = {
     maxTries: 6,
     difficulty: 'easy',
     isDaily: false,        // Daily Challenge mode (deterministic word, no Best Plays helper)
+    isChallenge: false,    // launched from a "Challenge a friend" link (fixed word + config)
     dailyDate: '',         // YYYY-MM-DD the active daily belongs to
     dictionary: new Set(), // allowed guesses for the current length (O(1) lookup)
     solutions: [],         // common-answer pool for the current length
@@ -141,6 +142,15 @@ function getSuggestions() {
 function openSuggestModal() { document.getElementById('suggest-modal').classList.add('active'); }
 function closeSuggestModal() { document.getElementById('suggest-modal').classList.remove('active'); }
 
+// How-to-play guide. Auto-opens once on a visitor's first session and is available any time
+// via the "?" button. Opening it (by either route) records the flag, so it never auto-opens again.
+const HELP_SEEN_KEY = 'wordleProHelpSeen';
+function openHelp() {
+    document.getElementById('help-modal').classList.add('active');
+    try { localStorage.setItem(HELP_SEEN_KEY, '1'); } catch (e) { /* storage unavailable */ }
+}
+function closeHelp() { document.getElementById('help-modal').classList.remove('active'); }
+
 // Guard against overlapping runs. The suggester worker is a singleton, so a second
 // in-flight request would attach a duplicate listener and could resolve with the FIRST
 // run's result — i.e. show stale suggestions for a row you've since moved past (close the
@@ -232,6 +242,65 @@ function fillCurrentGuess(word) {
     closeSuggestModal();
 }
 
+// Home-screen control config + persistence.
+const DIFFICULTY_DESCRIPTIONS = {
+    easy: 'Any valid word is allowed',
+    medium: 'Must reuse every revealed hint',
+    hard: 'Rare words allowed — plus you must reuse every hint'
+};
+const SETTINGS_KEY = 'wordleProSettings';
+
+// Read the saved length/tries/difficulty, validated against the allowed ranges so a
+// stale or tampered value can never start a broken game. Returns null when absent/invalid.
+function loadSettings() {
+    try {
+        const s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+        if (s && s.length >= 4 && s.length <= 8 && s.tries >= 3 && s.tries <= 10
+            && DIFFICULTY_DESCRIPTIONS[s.difficulty]) {
+            return { length: s.length, tries: s.tries, difficulty: s.difficulty };
+        }
+    } catch (e) { /* ignore malformed JSON */ }
+    return null;
+}
+
+// Persist the player's current choices so the home screen restores them next visit.
+function saveSettings() {
+    try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+            length: state.wordLength,
+            tries: state.maxTries,
+            difficulty: state.difficulty
+        }));
+    } catch (e) { /* storage unavailable — settings just won't persist */ }
+}
+
+// Apply a {length, tries, difficulty} config to BOTH game state and the home-screen
+// controls in one place, so the UI and state can never drift. Each value is range-checked
+// independently. Used to restore saved settings and to honor an incoming challenge link.
+function applyHomeSettings(length, tries, difficulty) {
+    if (length >= 4 && length <= 8) {
+        state.wordLength = length;
+        document.querySelectorAll('[data-length]').forEach(b =>
+            b.classList.toggle('active', parseInt(b.dataset.length) === length));
+        const disp = document.getElementById('word-length-display');
+        if (disp) disp.textContent = length;
+    }
+    if (tries >= 3 && tries <= 10) {
+        state.maxTries = tries;
+        const slider = document.getElementById('home-tries');
+        const td = document.getElementById('tries-display');
+        if (slider) slider.value = tries;
+        if (td) td.textContent = tries;
+    }
+    if (DIFFICULTY_DESCRIPTIONS[difficulty]) {
+        state.difficulty = difficulty;
+        document.querySelectorAll('[data-difficulty]').forEach(b =>
+            b.classList.toggle('active', b.dataset.difficulty === difficulty));
+        const dd = document.getElementById('difficulty-description');
+        if (dd) dd.textContent = DIFFICULTY_DESCRIPTIONS[difficulty];
+    }
+}
+
 // Home Screen Setup
 function setupHomeScreen() {
     // Word Length Selection (4–8; each length loads its own list on Start)
@@ -242,6 +311,7 @@ function setupHomeScreen() {
             e.target.classList.add('active');
             state.wordLength = parseInt(e.target.dataset.length);
             document.getElementById('word-length-display').textContent = state.wordLength;
+            saveSettings();
         });
     });
 
@@ -251,48 +321,43 @@ function setupHomeScreen() {
     triesSlider.addEventListener('input', (e) => {
         state.maxTries = parseInt(e.target.value);
         triesDisplay.textContent = state.maxTries;
+        saveSettings();
     });
 
     // Difficulty Selection
     const difficultyButtons = document.querySelectorAll('[data-difficulty]');
-    const difficultyDesc = document.getElementById('difficulty-description');
-    const descriptions = {
-        easy: 'Any valid word is allowed',
-        medium: 'Must reuse every revealed hint',
-        hard: 'Rare words allowed — plus you must reuse every hint'
-    };
-
     difficultyButtons.forEach(btn => {
         btn.addEventListener('click', (e) => {
             difficultyButtons.forEach(b => b.classList.remove('active'));
             e.target.closest('.difficulty-btn').classList.add('active');
             state.difficulty = e.target.closest('.difficulty-btn').dataset.difficulty;
-            difficultyDesc.textContent = descriptions[state.difficulty];
+            document.getElementById('difficulty-description').textContent =
+                DIFFICULTY_DESCRIPTIONS[state.difficulty];
+            saveSettings();
         });
     });
 
-    // Sync state with whatever the home screen shows as selected by default, so
-    // starting a game without touching any control uses the displayed values
-    // (previously state.wordLength stayed at its init value while the UI showed 5).
-    const activeLength = document.querySelector('[data-length].active');
-    if (activeLength) {
-        state.wordLength = parseInt(activeLength.dataset.length);
-        document.getElementById('word-length-display').textContent = state.wordLength;
+    // Initial config: restore saved settings if present, otherwise sync from whatever the
+    // home screen shows as selected by default (so starting without touching a control uses
+    // the displayed values). applyHomeSettings keeps state and UI in lockstep either way.
+    let cfg = loadSettings();
+    if (!cfg) {
+        const activeLength = document.querySelector('[data-length].active');
+        const activeDifficulty = document.querySelector('[data-difficulty].active');
+        cfg = {
+            length: activeLength ? parseInt(activeLength.dataset.length) : state.wordLength,
+            tries: parseInt(triesSlider.value),
+            difficulty: activeDifficulty ? activeDifficulty.dataset.difficulty : state.difficulty
+        };
     }
-    state.maxTries = parseInt(triesSlider.value);
-    triesDisplay.textContent = state.maxTries;
-    const activeDifficulty = document.querySelector('[data-difficulty].active');
-    if (activeDifficulty) {
-        state.difficulty = activeDifficulty.dataset.difficulty;
-        difficultyDesc.textContent = descriptions[state.difficulty];
-    }
+    applyHomeSettings(cfg.length, cfg.tries, cfg.difficulty);
 
     // Start Game Button
-    document.getElementById('start-game-btn').addEventListener('click', startGame);
+    document.getElementById('start-game-btn').addEventListener('click', () => startGame());
 
     // Retry button inside the word-list load-error banner (re-attempts the start).
     const retryLoadBtn = document.getElementById('retry-load-btn');
-    if (retryLoadBtn) retryLoadBtn.addEventListener('click', startGame);
+    if (retryLoadBtn) retryLoadBtn.addEventListener('click', () => startGame());
 }
 
 // Stats Preview
@@ -331,7 +396,9 @@ function scrollToTop() {
     if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
 }
 
-async function startGame() {
+// `challengeWord`, when given, fixes the solution (a "Challenge a friend" link) instead of
+// picking randomly; the length/tries/difficulty must already be applied to state.
+async function startGame(challengeWord = null) {
     if (startingGame) return; // guard against double-trigger while words load
     startingGame = true;
     setLoadError(null); // clear any previous failure (e.g. when retrying)
@@ -369,10 +436,11 @@ async function startGame() {
     state.gameOver = false;
     state.won = false;
     state.isDaily = false;
+    state.isChallenge = !!challengeWord;
     state.revealedLetters = { correct: {}, present: new Set() };
 
-    // Select random word
-    state.solution = state.solutions[Math.floor(Math.random() * state.solutions.length)];
+    // A challenge link fixes the word; otherwise pick randomly from the difficulty's pool.
+    state.solution = challengeWord || state.solutions[Math.floor(Math.random() * state.solutions.length)];
     if (DEBUG) console.log('Solution:', state.solution);
 
     // Switch screens
@@ -382,8 +450,9 @@ async function startGame() {
 
     // Update game info
     const difficultyNames = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
-    document.getElementById('game-config').textContent = 
-        `${state.wordLength} Letters • ${state.maxTries} Tries • ${difficultyNames[state.difficulty]}`;
+    const configLabel = `${state.wordLength} Letters • ${state.maxTries} Tries • ${difficultyNames[state.difficulty]}`;
+    document.getElementById('game-config').textContent =
+        state.isChallenge ? `Challenge • ${configLabel}` : configLabel;
     setBestPlaysVisible(true);
 
     // Initialize board and keyboard
@@ -525,6 +594,7 @@ async function startDailyChallenge() {
     state.gameOver = false;
     state.won = false;
     state.isDaily = true;
+    state.isChallenge = false;
     state.revealedLetters = { correct: {}, present: new Set() };
 
     // Deterministic word for today.
@@ -858,12 +928,14 @@ function showResult() {
     const playAgainBtn = document.getElementById('play-again-btn');
     const shareBtn = document.getElementById('share-result-btn');
     const copyBtn = document.getElementById('copy-result-btn');
+    const challengeBtn = document.getElementById('challenge-result-btn');
     const actions = document.querySelector('.result-actions');
     let dailyNote = document.getElementById('daily-note');
     if (state.isDaily) {
         if (playAgainBtn) playAgainBtn.style.display = 'none';
         if (shareBtn) shareBtn.style.display = '';
         if (copyBtn) copyBtn.style.display = '';
+        if (challengeBtn) challengeBtn.style.display = 'none'; // daily is the same word for everyone
         resetActionButton(shareBtn);
         resetActionButton(copyBtn);
         if (actions) actions.classList.add('is-daily');
@@ -881,6 +953,7 @@ function showResult() {
         if (playAgainBtn) playAgainBtn.style.display = '';
         if (shareBtn) shareBtn.style.display = 'none';
         if (copyBtn) copyBtn.style.display = 'none';
+        if (challengeBtn) { challengeBtn.style.display = ''; resetActionButton(challengeBtn); }
         if (actions) actions.classList.remove('is-daily');
         if (dailyNote) dailyNote.style.display = 'none';
     }
@@ -1025,6 +1098,59 @@ function resetActionButton(btn) {
     btn.classList.remove('copied');
     const label = btn.querySelector('.btn-label');
     if (label && btn.dataset.label) label.textContent = btn.dataset.label;
+}
+
+// ── Challenge a friend ──
+// Encode the just-played puzzle (length, tries, difficulty, word) into a shareable link so a
+// friend plays the exact same game. The payload is base64url'd — not for secrecy, just so the
+// answer isn't sitting in plain sight in a link preview. No backend: the receiver reconstructs
+// the puzzle entirely from the URL plus the same word list this app already ships.
+function b64urlEncode(str) {
+    return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlDecode(str) {
+    let s = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    return atob(s);
+}
+
+function buildChallengeUrl() {
+    const payload = `${state.wordLength}|${state.maxTries}|${state.difficulty}|${state.solution}`;
+    return `${location.origin + location.pathname}?challenge=${b64urlEncode(payload)}`;
+}
+
+// Parse + validate the ?challenge= token. Every field is range/format-checked and the word
+// length must match, so a malformed or tampered link can never launch a broken game.
+function parseChallengeParam() {
+    const token = new URLSearchParams(location.search).get('challenge');
+    if (!token) return null;
+    let raw;
+    try { raw = b64urlDecode(token); } catch (e) { return null; }
+    const parts = raw.split('|');
+    if (parts.length !== 4) return null;
+    const len = parseInt(parts[0], 10);
+    const tries = parseInt(parts[1], 10);
+    const diff = parts[2];
+    const word = (parts[3] || '').toLowerCase();
+    if (!(len >= 4 && len <= 8)) return null;
+    if (!(tries >= 3 && tries <= 10)) return null;
+    if (!DIFFICULTY_DESCRIPTIONS[diff]) return null;
+    if (!/^[a-z]+$/.test(word) || word.length !== len) return null;
+    return { len, tries, diff, word };
+}
+
+async function challengeFriend() {
+    const url = buildChallengeUrl();
+    const text = `Can you beat me at Wordle Pro? Try the exact ${state.wordLength}-letter word I just played:`;
+    if (navigator.share) {
+        try {
+            await navigator.share({ title: 'Wordle Pro challenge', text, url });
+            return; // the share sheet handled it
+        } catch (err) {
+            if (err && err.name === 'AbortError') return; // user dismissed the sheet
+        }
+    }
+    copyToClipboard(`${text}\n${url}`, document.getElementById('challenge-result-btn'));
 }
 
 // Statistics
@@ -1184,6 +1310,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
     document.getElementById('home-theme-toggle').addEventListener('click', toggleTheme);
 
+    // How to Play guide ("?" button on the home screen; closes via its own scoped controls)
+    document.getElementById('home-help-btn').addEventListener('click', openHelp);
+    document.querySelectorAll('[data-close-help]').forEach(el => {
+        el.addEventListener('click', closeHelp);
+    });
+
     // Play again button
     document.getElementById('play-again-btn').addEventListener('click', () => {
         startGame();
@@ -1200,6 +1332,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (shareBtn) shareBtn.addEventListener('click', shareDailyResult);
     const copyBtn = document.getElementById('copy-result-btn');
     if (copyBtn) copyBtn.addEventListener('click', copyDailyResult);
+
+    // Challenge a friend (non-daily games): share/copy a link to this exact puzzle.
+    const challengeBtn = document.getElementById('challenge-result-btn');
+    if (challengeBtn) challengeBtn.addEventListener('click', challengeFriend);
 
     // Modal close
     document.querySelector('.modal-close').addEventListener('click', () => {
@@ -1222,6 +1358,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Keyboard events
     document.addEventListener('keydown', (e) => {
+        // While the How-to-Play guide is open, swallow keys (so the board behind it doesn't
+        // type) and let Escape dismiss it. Checked before the game-over guard so it also
+        // works on the result screen.
+        if (document.getElementById('help-modal').classList.contains('active')) {
+            if (e.key === 'Escape') closeHelp();
+            return;
+        }
         if (state.gameOver) return;
         if (document.getElementById('suggest-modal').classList.contains('active')) return;
         if (document.getElementById('game-screen').classList.contains('active')) {
@@ -1234,6 +1377,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    // If opened from a "Challenge a friend" link, apply that puzzle's config and launch it
+    // straight away. The token is then stripped from the address bar so Play Again / refresh
+    // behave like a normal session (other params, e.g. debug, are preserved).
+    const challenge = parseChallengeParam();
+    if (challenge) {
+        applyHomeSettings(challenge.len, challenge.tries, challenge.diff);
+        const url = new URL(location.href);
+        url.searchParams.delete('challenge');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+        startGame(challenge.word);
+    } else if (!localStorage.getItem(HELP_SEEN_KEY)) {
+        // First-ever visit (and not arriving via a challenge link): show the rules once.
+        openHelp();
+    }
 });
 
 // Prevent zoom on double tap (iOS)

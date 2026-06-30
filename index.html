@@ -26,6 +26,13 @@
     <div id="app" class="app-container" style="display: none;">
         <!-- Home Screen -->
         <div id="home-screen" class="screen active">
+            <button class="header-btn home-help-toggle" id="home-help-btn" type="button" aria-label="How to play">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                    <path d="M9.6 9.4a2.5 2.5 0 0 1 4.9.6c0 1.7-2.5 2-2.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="12" cy="16.6" r="1" fill="currentColor"/>
+                </svg>
+            </button>
             <button class="header-btn home-theme-toggle" id="home-theme-toggle" aria-label="Toggle dark mode">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                     <path d="M12 3C7.03 3 3 7.03 3 12C3 16.97 7.03 21 12 21C13.28 21 14.5 20.72 15.61 20.21C14.5 18.95 13.84 17.27 13.84 15.42C13.84 11.41 17.09 8.16 21.1 8.16C21.53 8.16 21.95 8.2 22.36 8.27C21.2 5.18 17.91 3 12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
@@ -207,6 +214,13 @@
                                 </svg>
                                 <span class="btn-label">Copy</span>
                             </button>
+                            <button class="result-btn secondary challenge-btn" id="challenge-result-btn" type="button" data-label="Challenge a friend" style="display: none;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M10 13a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1.5 1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M14 11a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1.5-1.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                <span class="btn-label">Challenge a friend</span>
+                            </button>
                             <button class="result-btn secondary" id="view-analysis-btn">
                                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                                     <rect x="3" y="8" width="3" height="9" fill="currentColor" rx="1"/>
@@ -255,6 +269,64 @@
                     </button>
                 </div>
                 <div class="modal-body" id="suggest-content"></div>
+            </div>
+        </div>
+
+        <!-- How to Play Modal -->
+        <div id="help-modal" class="modal">
+            <div class="modal-backdrop" data-close-help></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>How to Play</h2>
+                    <button class="modal-close" data-close-help aria-label="Close">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p class="help-lead">Guess the hidden word before you run out of tries.</p>
+                    <ul class="help-rules">
+                        <li>Each guess must be a real word of the chosen length.</li>
+                        <li>After every guess, the tiles change color to show how close you were.</li>
+                    </ul>
+                    <div class="help-examples">
+                        <div class="help-example">
+                            <div class="help-row">
+                                <span class="help-tile correct">W</span>
+                                <span class="help-tile">E</span>
+                                <span class="help-tile">A</span>
+                                <span class="help-tile">R</span>
+                                <span class="help-tile">Y</span>
+                            </div>
+                            <p class="help-explain"><strong>W</strong> is in the word and in the correct spot.</p>
+                        </div>
+                        <div class="help-example">
+                            <div class="help-row">
+                                <span class="help-tile">P</span>
+                                <span class="help-tile present">I</span>
+                                <span class="help-tile">L</span>
+                                <span class="help-tile">L</span>
+                                <span class="help-tile">S</span>
+                            </div>
+                            <p class="help-explain"><strong>I</strong> is in the word but in the wrong spot.</p>
+                        </div>
+                        <div class="help-example">
+                            <div class="help-row">
+                                <span class="help-tile">V</span>
+                                <span class="help-tile">A</span>
+                                <span class="help-tile">G</span>
+                                <span class="help-tile absent">U</span>
+                                <span class="help-tile">E</span>
+                            </div>
+                            <p class="help-explain"><strong>U</strong> is not in the word at all.</p>
+                        </div>
+                    </div>
+                    <div class="help-modes">
+                        <p><strong>Difficulty.</strong> On Medium and Hard, every revealed hint must be reused in your next guesses. Hard also mixes in rarer words.</p>
+                        <p><strong>Daily Challenge.</strong> Everyone gets the same word each day &mdash; come back tomorrow for a new one.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

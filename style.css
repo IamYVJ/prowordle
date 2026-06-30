@@ -236,6 +236,13 @@ body {
     z-index: 10;
 }
 
+.home-help-toggle {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top));
+    left: 16px;
+    z-index: 10;
+}
+
 .home-content {
     max-width: 480px;
     margin: 0 auto;
@@ -1214,6 +1221,100 @@ body {
     max-height: calc(min(82vh, 760px) - 73px);
     overflow-y: auto;
 }
+
+/* How to Play */
+.help-lead {
+    font-size: 15px;
+    color: var(--text-primary);
+    line-height: 1.55;
+    margin-bottom: 14px;
+}
+
+.help-rules {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.help-rules li {
+    position: relative;
+    padding-left: 18px;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.help-rules li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 7px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+}
+
+.help-examples {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    margin-bottom: 18px;
+}
+
+.help-row {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 6px;
+}
+
+.help-tile {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 15px;
+    text-transform: uppercase;
+    border-radius: 6px;
+    border: 2px solid var(--tile-border);
+    background: var(--tile-empty);
+    color: var(--text-primary);
+}
+
+.help-tile.correct { background: var(--correct); border-color: var(--correct); color: var(--on-correct); }
+.help-tile.present { background: var(--present); border-color: var(--present); color: var(--on-present); }
+.help-tile.absent  { background: var(--absent);  border-color: var(--absent);  color: var(--on-absent); }
+
+.help-explain {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.help-explain strong { color: var(--text-primary); font-weight: 700; }
+
+.help-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.help-modes p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.help-modes strong { color: var(--text-primary); }
 
 /* Analysis Styles */
 .analysis-step {
