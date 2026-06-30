@@ -1,5 +1,5 @@
 // Wordle Pro - Main Game Script
-// Modern 4-letter Wordle clone with enhanced UI
+// Modern variable-length (4–8) Wordle clone with enhanced UI
 
 // Game State
 const state = {
@@ -9,7 +9,7 @@ const state = {
     currentRow: 0,
     gameOver: false,
     won: false,
-    wordLength: 4,
+    wordLength: 5, // default matches the home screen's pre-selected length (synced from the DOM on load)
     maxTries: 6,
     difficulty: 'easy',
     isDaily: false,        // Daily Challenge mode (deterministic word, no Best Plays helper)
@@ -266,6 +266,22 @@ function setupHomeScreen() {
             difficultyDesc.textContent = descriptions[state.difficulty];
         });
     });
+
+    // Sync state with whatever the home screen shows as selected by default, so
+    // starting a game without touching any control uses the displayed values
+    // (previously state.wordLength stayed at its init value while the UI showed 5).
+    const activeLength = document.querySelector('[data-length].active');
+    if (activeLength) {
+        state.wordLength = parseInt(activeLength.dataset.length);
+        document.getElementById('word-length-display').textContent = state.wordLength;
+    }
+    state.maxTries = parseInt(triesSlider.value);
+    triesDisplay.textContent = state.maxTries;
+    const activeDifficulty = document.querySelector('[data-difficulty].active');
+    if (activeDifficulty) {
+        state.difficulty = activeDifficulty.dataset.difficulty;
+        difficultyDesc.textContent = descriptions[state.difficulty];
+    }
 
     // Start Game Button
     document.getElementById('start-game-btn').addEventListener('click', startGame);
