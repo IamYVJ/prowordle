@@ -24,8 +24,12 @@ let stats = JSON.parse(localStorage.getItem('wordleProStats')) || {
     played: 0,
     won: 0,
     currentStreak: 0,
-    maxStreak: 0
+    maxStreak: 0,
+    dist: {}            // guesses-to-win -> count, drives the distribution chart
 };
+// Back-fill for saves created before the distribution existed, so older players
+// don't hit a missing-field error the first time the chart renders.
+if (!stats.dist || typeof stats.dist !== 'object') stats.dist = {};
 
 // Theme Management
 const currentTheme = localStorage.getItem('theme') || 'dark';
@@ -667,7 +671,7 @@ function submitGuess() {
         state.gameOver = true;
         setTimeout(() => {
             bounceRow();
-            updateStats(true);
+            updateStats(true, state.guesses.length);
             setTimeout(() => showResult(), 1500);
         }, 1500);
     } else if (state.currentRow === state.maxTries - 1) {
@@ -827,21 +831,28 @@ function showResult() {
 
     resultAnswer.textContent = state.solution.toUpperCase();
 
-    // Show stats
+    // Summary stats. The just-finished game's guess count is conveyed by the
+    // highlighted bar in the distribution chart below, so it isn't repeated here.
+    const winPct = stats.played ? Math.round((stats.won / stats.played) * 100) : 0;
     resultStats.innerHTML = `
-        <div class="stat-item">
-            <div class="stat-value">${state.won ? state.currentRow + 1 : '-'}</div>
-            <div class="stat-label">Guesses</div>
-        </div>
         <div class="stat-item">
             <div class="stat-value">${stats.played}</div>
             <div class="stat-label">Played</div>
         </div>
         <div class="stat-item">
+            <div class="stat-value">${winPct}</div>
+            <div class="stat-label">Win %</div>
+        </div>
+        <div class="stat-item">
             <div class="stat-value">${stats.currentStreak}</div>
             <div class="stat-label">Streak</div>
         </div>
+        <div class="stat-item">
+            <div class="stat-value">${stats.maxStreak}</div>
+            <div class="stat-label">Max</div>
+        </div>
     `;
+    renderDistribution();
 
     // Daily Challenge: you can't replay today, so swap "Play Again" for a come-back note.
     const playAgainBtn = document.getElementById('play-again-btn');
@@ -880,6 +891,47 @@ function showResult() {
     setTimeout(() => {
         resultDisplay.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
+}
+
+// Render the guess-distribution chart on the result screen. One row per guess count from
+// 1..top, where `top` spans at least this game's max tries so the just-finished bar has
+// context (games of different lengths share one chart). Bar widths are scaled to the most
+// common count; the bar matching this game's winning guess count is highlighted.
+function renderDistribution() {
+    const host = document.getElementById('result-dist');
+    if (!host) return;
+
+    const dist = stats.dist || {};
+    let maxBucket = 0, maxCount = 0;
+    for (const key in dist) {
+        const n = parseInt(key, 10);
+        const c = dist[key];
+        if (n > 0 && c > 0) {
+            if (n > maxBucket) maxBucket = n;
+            if (c > maxCount) maxCount = c;
+        }
+    }
+    const top = Math.max(maxBucket, state.maxTries || 0, 1);
+    const denom = maxCount || 1;                       // avoid divide-by-zero when no wins yet
+    const highlight = state.won ? state.guesses.length : -1;
+
+    let rows = '';
+    for (let i = 1; i <= top; i++) {
+        const count = dist[i] || 0;
+        const width = Math.round((count / denom) * 100);
+        const cls = i === highlight ? 'dist-bar current' : 'dist-bar';
+        // Final width is set inline so the chart is correct regardless of timing; the
+        // CSS `dist-grow` keyframe animates it in from zero (and is a no-op under
+        // prefers-reduced-motion). min-width keeps the count readable on tiny bars.
+        rows += `
+            <div class="dist-row">
+                <span class="dist-index">${i}</span>
+                <span class="dist-track">
+                    <span class="${cls}" style="width: ${width}%;">${count}</span>
+                </span>
+            </div>`;
+    }
+    host.innerHTML = `<div class="dist-title">Guess Distribution</div>${rows}`;
 }
 
 // ── Daily Challenge: share results ──
@@ -976,12 +1028,14 @@ function resetActionButton(btn) {
 }
 
 // Statistics
-function updateStats(won) {
+function updateStats(won, numGuesses) {
     stats.played++;
     if (won) {
         stats.won++;
         stats.currentStreak++;
         stats.maxStreak = Math.max(stats.maxStreak, stats.currentStreak);
+        // Tally how many guesses this win took for the distribution chart.
+        if (numGuesses > 0) stats.dist[numGuesses] = (stats.dist[numGuesses] || 0) + 1;
     } else {
         stats.currentStreak = 0;
     }
