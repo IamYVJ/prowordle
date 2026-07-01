@@ -1339,10 +1339,14 @@ body {
    ============================================================ */
 
 /* Home CTA: transparent like Blitz so only Daily carries the accent fill. */
-.quordle-btn { background: transparent; }
+/* Free-play button = secondary: neutral outline + muted icons so the primary
+   filled Daily button (accent) reads as the headline action. */
+.quordle-btn { background: transparent; border-color: var(--border-color); }
+.quordle-btn .daily-btn-cal,
+.quordle-btn .daily-btn-arrow { color: var(--text-secondary); }
 
-/* CTA + word-count selector stack as one unit (the .home-content gap:24px
-   sits above/below the wrapper, not between the button and its pills). */
+/* Daily + Free play buttons and the word-count selector stack as one unit (the
+   .home-content gap:24px sits above/below the wrapper, not between its rows). */
 .quordle-cta {
     display: flex;
     flex-direction: column;

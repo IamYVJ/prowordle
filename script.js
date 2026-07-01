@@ -990,19 +990,22 @@ const QUORDLE_LENGTH = 5;                  // every board is a 5-letter word
 const QUORDLE_EXTRA_GUESSES = 5;           // guesses allowed = boards + 5 (so 7 / 9 / 13)
 const QUORDLE_NAMES = { 2: 'Dordle', 4: 'Quordle', 8: 'Octordle' };
 const QUORDLE_KEY = 'wordleProQuordle';
+const QUORDLE_DAILY_KEY = 'wordleProQuordleDaily'; // today's daily progress, keyed by board count
 
 // Input lock raised during the reveal animation so a fast typist can't submit onto a
 // board mid-flip; startingQuordle guards the async word load against a double-start.
 let quordleLock = false;
 let startingQuordle = false;
 const quordle = {
-    boards: 4,       // how many boards this run (2/4/8)
-    tries: 9,        // guesses allowed this run (boards + QUORDLE_EXTRA_GUESSES)
-    solutions: [],   // the secret words, indexed by board
-    solved: [],      // bool per board
-    solvedRow: [],   // 0-based guess index each board was solved on (drives the summary)
-    guesses: [],     // shared guess history (lowercase)
-    currentGuess: '' // the row currently being typed
+    boards: 4,        // how many boards this run (2/4/8)
+    tries: 9,         // guesses allowed this run (boards + QUORDLE_EXTRA_GUESSES)
+    solutions: [],    // the secret words, indexed by board
+    solved: [],       // bool per board
+    solvedRow: [],    // 0-based guess index each board was solved on (drives the summary)
+    guesses: [],      // shared guess history (lowercase)
+    currentGuess: '', // the row currently being typed
+    isDaily: false,   // true = today's seeded boards (shared by everyone); false = free play
+    dailyDate: ''     // YYYY-MM-DD the active daily belongs to
 };
 
 // Persisted as { best: { "2":n, "4":n, "8":n }, sel: N }. Per-count best = fewest guesses
@@ -1052,20 +1055,37 @@ function saveQuordleSel(boards) {
     saveQuordleData(data);
 }
 
-// Refresh the home-screen Quordle CTA (title + sub-label) and the word-count pills to
-// reflect the currently-selected board count and its saved best.
+// Refresh the home-screen Quordle CTA (Daily + Free play buttons) and the word-count pills
+// to reflect the currently-selected board count, today's daily progress, and the saved best.
 function updateQuordleButton() {
     const sel = loadQuordleSel();
     const tries = sel + QUORDLE_EXTRA_GUESSES;
     const best = loadQuordleBest(sel);
-    const title = document.getElementById('quordle-btn-title');
-    const sub = document.getElementById('quordle-btn-sub');
-    if (title) title.textContent = QUORDLE_NAMES[sel];
-    if (sub) {
-        sub.textContent = best > 0
-            ? `Solve ${sel} words at once · Best ${best}/${tries}`
-            : `Solve ${sel} words at once · ${tries} guesses`;
+    const name = QUORDLE_NAMES[sel];
+
+    // Daily button: deterministic boards shared by everyone today; sub-label tracks progress.
+    const dailyTitle = document.getElementById('quordle-daily-title');
+    const dailySub = document.getElementById('quordle-daily-sub');
+    if (dailyTitle) dailyTitle.textContent = `Daily ${name}`;
+    if (dailySub) {
+        const dateLabel = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const prog = loadQuordleDailyProgress(sel);
+        if (prog && prog.status === 'won') dailySub.textContent = 'Solved today — back tomorrow';
+        else if (prog && prog.status === 'lost') dailySub.textContent = 'Played today — back tomorrow';
+        else if (prog && prog.guesses && prog.guesses.length) dailySub.textContent = `Resume today's boards • ${dateLabel}`;
+        else dailySub.textContent = `Today's boards • ${dateLabel}`;
     }
+
+    // Free play button: fresh random boards each launch; show the personal best if any.
+    const freeTitle = document.getElementById('quordle-free-title');
+    const freeSub = document.getElementById('quordle-free-sub');
+    if (freeTitle) freeTitle.textContent = 'Free play';
+    if (freeSub) {
+        freeSub.textContent = best > 0
+            ? `Random ${name} · Best ${best}/${tries}`
+            : `Random ${name} · ${tries} guesses`;
+    }
+
     document.querySelectorAll('.quordle-words .option-btn').forEach(btn => {
         btn.classList.toggle('active', Number(btn.dataset.quordleBoards) === sel);
     });
@@ -1156,7 +1176,7 @@ function initQuordleKeyboard() {
     });
 }
 
-// Pick n distinct random words from a pool (the four secret words are always distinct).
+// Pick n distinct random words from a pool (the secret words are always distinct).
 function pickDistinct(pool, n) {
     const picks = [];
     const used = new Set();
@@ -1169,14 +1189,111 @@ function pickDistinct(pool, n) {
     return picks;
 }
 
-async function startQuordle(boards) {
+// Small fast seeded PRNG (mulberry32). Deterministic from a 32-bit seed, so a given seed
+// always yields the same sequence — the basis for date-seeded daily boards (no server needed).
+function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+        a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+// Deterministically pick `n` distinct words for a given day + board count. Everyone playing
+// the same calendar day gets the same set; the count is folded into the seed so the daily
+// Dordle/Quordle/Octordle are independent puzzles (not prefixes of one another).
+function pickDailyDistinct(pool, dateKey, n) {
+    if (!pool || !pool.length) return [];
+    const rand = mulberry32(hashString(`wordlepro-daily-multi-${n}-${dateKey}`));
+    const picks = [];
+    const used = new Set();
+    let guard = 0;
+    while (picks.length < n && guard < 100000) {
+        guard++;
+        const w = pool[Math.floor(rand() * pool.length)];
+        if (!used.has(w)) { used.add(w); picks.push(w); }
+    }
+    return picks;
+}
+
+// Daily multi-wordle progress, stored as { date, byBoards: { "2":{guesses,status}, ... } }
+// so each of today's daily puzzles (Dordle/Quordle/Octordle) is tracked independently and
+// all of them reset together at the next local midnight.
+function loadQuordleDailyAll() {
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(QUORDLE_DAILY_KEY)); } catch (e) { raw = null; }
+    if (raw && typeof raw === 'object' && raw.byBoards && typeof raw.byBoards === 'object') {
+        return { date: typeof raw.date === 'string' ? raw.date : '', byBoards: raw.byBoards };
+    }
+    return { date: '', byBoards: {} };
+}
+
+// Today's saved progress for a given board count, or null if none (or it's from a past day).
+function loadQuordleDailyProgress(boards) {
+    const all = loadQuordleDailyAll();
+    if (all.date !== todayKey()) return null;
+    const p = all.byBoards[boards];
+    return (p && Array.isArray(p.guesses)) ? p : null;
+}
+
+// Persist the active daily run's guesses + status so it survives a refresh and stays locked
+// once finished. Stores only the player's own guesses — never the solutions. No-op in free play.
+function saveQuordleDailyProgress() {
+    if (!quordle.isDaily) return;
+    const today = todayKey();
+    let all = loadQuordleDailyAll();
+    if (all.date !== today) all = { date: today, byBoards: {} };
+    const won = quordle.solved.length > 0 && quordle.solved.every(Boolean);
+    const status = state.gameOver ? (won ? 'won' : 'lost') : 'in-progress';
+    all.byBoards[quordle.boards] = { guesses: quordle.guesses.slice(), status };
+    try { localStorage.setItem(QUORDLE_DAILY_KEY, JSON.stringify(all)); }
+    catch (e) { /* storage unavailable — progress just won't persist */ }
+}
+
+// Re-apply already-made guesses to the boards WITHOUT animation (resume or show-finished a
+// saved daily). Mirrors submitQuordleGuess's scoring/solve detection minus animation, then
+// finalizes the win/loss UI. Never saves a "best" — daily is a fixed, shared puzzle.
+function replayQuordleGuesses(savedGuesses) {
+    for (const g of savedGuesses) {
+        if (!g || g.length !== QUORDLE_LENGTH) continue;
+        const rowIdx = quordle.guesses.length;
+        if (rowIdx >= quordle.tries) break;
+        quordle.guesses.push(g);
+        for (let b = 0; b < quordle.boards; b++) {
+            if (quordle.solved[b]) continue;
+            revealQuordleBoard(b, rowIdx, g, false);
+            if (g === quordle.solutions[b]) { quordle.solved[b] = true; quordle.solvedRow[b] = rowIdx; }
+        }
+    }
+    quordle.currentGuess = '';
+    updateQuordleKeyboard();
+    // Fade every solved board (afterQuordleReveal would normally do this post-animation).
+    for (let b = 0; b < quordle.boards; b++) {
+        if (quordle.solved[b]) { const el = qBoardEl(b); if (el) el.classList.add('solved'); }
+    }
+    const solvedCount = quordle.solved.filter(Boolean).length;
+    if (solvedCount === quordle.boards) {
+        state.gameOver = true;
+        showQuordleResult(true, false);
+    } else if (quordle.guesses.length >= quordle.tries) {
+        state.gameOver = true;
+        showQuordleResult(false, false);
+    }
+    updateQuordleMeta();
+}
+
+async function startQuordle(boards, opts = {}) {
     if (startingQuordle) return;
     // Resolve & validate the requested board count (fall back to the saved selection).
     if (!QUORDLE_COUNTS.includes(boards)) boards = loadQuordleSel();
+    const isDaily = !!opts.daily;
     startingQuordle = true;
     setLoadError(null);
 
-    const sub = document.getElementById('quordle-btn-sub');
+    // Reflect loading in whichever button was tapped (Daily vs Free play), then restore it.
+    const sub = document.getElementById(isDaily ? 'quordle-daily-sub' : 'quordle-free-sub');
     const originalSub = sub ? sub.textContent : '';
     if (sub) sub.textContent = 'Loading…';
 
@@ -1207,7 +1324,13 @@ async function startQuordle(boards) {
     state.gameOver = false;
     exitBlitzMode(); // tear down any in-progress Blitz run (timer/HUD/lock)
 
-    quordle.solutions = pickDistinct(words.answers, quordle.boards);
+    // Daily: deterministic boards seeded by today's date + count, shared by everyone (no server).
+    // Free play: a fresh random set each launch.
+    quordle.isDaily = isDaily;
+    quordle.dailyDate = isDaily ? todayKey() : '';
+    quordle.solutions = isDaily
+        ? pickDailyDistinct(words.answers, quordle.dailyDate, quordle.boards)
+        : pickDistinct(words.answers, quordle.boards);
     quordle.solved = new Array(quordle.boards).fill(false);
     quordle.solvedRow = new Array(quordle.boards).fill(-1);
     quordle.guesses = [];
@@ -1226,6 +1349,13 @@ async function startQuordle(boards) {
     updateQuordleMeta();
     const panel = document.getElementById('quordle-result');
     if (panel) panel.style.display = 'none';
+
+    // Daily resume: replay any guesses already made today (and re-show the finished state if
+    // it's already won/lost), so the run picks up exactly where it was left.
+    if (isDaily) {
+        const prog = loadQuordleDailyProgress(boards);
+        if (prog && prog.guesses && prog.guesses.length) replayQuordleGuesses(prog.guesses);
+    }
 }
 
 // Leave Quordle (returning home or starting another mode): clear flags/lock and hide the result.
@@ -1307,6 +1437,7 @@ function submitQuordleGuess() {
     updateQuordleKeyboard();
     qAnnounceGuess(guess, rowIdx);
     updateQuordleMeta();
+    if (quordle.isDaily) saveQuordleDailyProgress(); // persist each guess so a refresh resumes
 
     quordle.currentGuess = '';
     const revealMs = QUORDLE_LENGTH * 300 + 350; // last tile colours at (n-1)*300 + 300
@@ -1383,9 +1514,12 @@ function afterQuordleReveal() {
     if (solvedCount === quordle.boards) {
         state.gameOver = true;
         const used = quordle.guesses.length;
-        const prevBest = loadQuordleBest(quordle.boards);
-        const isNewBest = prevBest === 0 || used < prevBest;
-        if (isNewBest) saveQuordleBest(quordle.boards, used);
+        let isNewBest = false;
+        if (!quordle.isDaily) { // daily is a fixed shared puzzle — no personal speed "best"
+            const prevBest = loadQuordleBest(quordle.boards);
+            isNewBest = prevBest === 0 || used < prevBest;
+            if (isNewBest) saveQuordleBest(quordle.boards, used);
+        }
         qAnnounce(`Solved all ${quordle.boards} in ${used} ${used === 1 ? 'guess' : 'guesses'}.`);
         showQuordleResult(true, isNewBest);
     } else if (quordle.guesses.length >= quordle.tries) {
@@ -1395,6 +1529,7 @@ function afterQuordleReveal() {
     } else {
         quordleLock = false; // keep playing
     }
+    if (quordle.isDaily) saveQuordleDailyProgress(); // capture the final won/lost status
     updateQuordleMeta();
 }
 
@@ -1457,6 +1592,31 @@ function showQuordleResult(won, isNewBest) {
             li.appendChild(tag);
             list.appendChild(li);
         }
+    }
+
+    // Daily is a fixed, shared puzzle: hide the personal-best row + "Play Again" (can't replay
+    // today) and show a come-back note instead. Free play restores both.
+    const bestRow = panel.querySelector('.quordle-best-row');
+    const againBtn = document.getElementById('quordle-again-btn');
+    const actions = panel.querySelector('.result-actions.is-quordle');
+    let dailyNote = document.getElementById('quordle-daily-note');
+    if (quordle.isDaily) {
+        if (bestRow) bestRow.style.display = 'none';
+        if (againBtn) againBtn.style.display = 'none';
+        if (!dailyNote && actions && actions.parentElement) {
+            dailyNote = document.createElement('p');
+            dailyNote.id = 'quordle-daily-note';
+            dailyNote.className = 'daily-note';
+            actions.parentElement.insertBefore(dailyNote, actions);
+        }
+        if (dailyNote) {
+            dailyNote.textContent = 'Come back tomorrow for new boards.';
+            dailyNote.style.display = '';
+        }
+    } else {
+        if (bestRow) bestRow.style.display = '';
+        if (againBtn) againBtn.style.display = '';
+        if (dailyNote) dailyNote.style.display = 'none';
     }
 
     panel.style.display = 'block';
@@ -2415,12 +2575,15 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBlitzButton();
     });
 
-    // Quordle: home CTA starts a run; the result panel offers Play Again + Home. The header
-    // Back button and Home both return to the home screen and tear down the run.
-    const quordleBtn = document.getElementById('quordle-challenge-btn');
-    if (quordleBtn) quordleBtn.addEventListener('click', () => startQuordle(loadQuordleSel()));
+    // Quordle: home CTA has two launches — Daily (deterministic, shared) and Free play (random).
+    // The result panel offers Play Again (free play) + Home. The header Back button and Home both
+    // return to the home screen and tear down the run.
+    const quordleDailyBtn = document.getElementById('quordle-daily-btn');
+    if (quordleDailyBtn) quordleDailyBtn.addEventListener('click', () => startQuordle(loadQuordleSel(), { daily: true }));
+    const quordleFreeBtn = document.getElementById('quordle-free-btn');
+    if (quordleFreeBtn) quordleFreeBtn.addEventListener('click', () => startQuordle(loadQuordleSel(), { daily: false }));
     const quordleAgainBtn = document.getElementById('quordle-again-btn');
-    if (quordleAgainBtn) quordleAgainBtn.addEventListener('click', () => startQuordle(quordle.boards)); // replay same count
+    if (quordleAgainBtn) quordleAgainBtn.addEventListener('click', () => startQuordle(quordle.boards, { daily: false })); // Play Again is always free play — can't replay today's daily
     // Word-count pills (2 / 4 / 8): pick the board count for the next run. updateQuordleButton
     // re-syncs the active pill + CTA title/sub from the saved selection.
     document.querySelectorAll('.quordle-words .option-btn').forEach(btn => {
